@@ -18,10 +18,4 @@ pub async fn receive_frame(addr: &str, output_file: &str) -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    let addr = "127.0.0.1:12345";
-    let output_file = "received_frame.jpeg";
-    receive_frame(addr, output_file).await?;
-    Ok(())
-}
+
