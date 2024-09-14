@@ -1,14 +1,16 @@
-use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write, Result};
+use tokio::net::TcpStream;
 use std::fs::File;
+use std::io::{self, Write};
+use tokio::io::AsyncReadExt;
 
-fn handle_client(mut stream: TcpStream, output_file: &str) -> Result<()> {
+pub async fn receive_frame(addr: &str, output_file: &str) -> io::Result<()> {
+    let mut stream = TcpStream::connect(addr).await?;
     let mut buffer = Vec::new();
 
-    // Leggi i dati dal socket (riceve tutto il JPEG)
-    stream.read_to_end(&mut buffer)?;
+    // Ricevi il frame
+    stream.read_to_end(&mut buffer).await?;
 
-    // Scrivi il buffer in un file JPEG
+    // Salva il frame come file JPEG
     let mut file = File::create(output_file)?;
     file.write_all(&buffer)?;
 
@@ -16,23 +18,10 @@ fn handle_client(mut stream: TcpStream, output_file: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn receive_frame(addr: &str, output_file: &str) -> Result<()> {
-    let listener = TcpListener::bind(addr)?;
-
-    println!("In attesa di connessioni su {}", addr);
-
-    // Accetta una singola connessione
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!("Connessione accettata: {:?}", stream.peer_addr());
-                handle_client(stream, output_file)?;
-            }
-            Err(e) => {
-                eprintln!("Errore di connessione: {}", e);
-            }
-        }
-    }
-
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let addr = "127.0.0.1:12345";
+    let output_file = "received_frame.jpeg";
+    receive_frame(addr, output_file).await?;
     Ok(())
 }
