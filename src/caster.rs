@@ -3,7 +3,7 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use std::error::Error;
 use scrap::{Capturer, Display};
-use image::{ImageBuffer, RgbImage, DynamicImage, ImageOutputFormat};
+use image::{ImageBuffer, RgbImage, DynamicImage, ImageEncoder};
 use std::io::Cursor;
 use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration};
@@ -16,7 +16,10 @@ async fn compress_frame_to_jpeg(frame: &[u8], width: usize, height: usize) -> Re
     }
     let img = DynamicImage::ImageRgb8(img_buffer);
     let mut jpeg_data = Vec::new();
-    img.write_to(&mut Cursor::new(&mut jpeg_data), ImageOutputFormat::Jpeg(80))?;
+    {
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new(&mut jpeg_data);
+        encoder.encode_image(&img)?;
+    }
     Ok(jpeg_data)
 }
 
