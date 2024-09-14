@@ -21,8 +21,9 @@ src/ui.rs: Modulo per gestire l'interfaccia utente.
 3. Cattura dello schermo
    Per la cattura dello schermo, puoi usare librerie come:
 
-scrap: Permette di catturare il contenuto dello schermo in modo efficiente.
+scrap (Windows, macOS): Permette di catturare il contenuto dello schermo in modo efficiente.
 Supporta tutte le piattaforme, quindi è un buon punto di partenza per la compatibilità.
+x11 (Linux)
 4. Streaming ai peer
    La parte di rete può essere gestita con:
 

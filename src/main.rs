@@ -1,8 +1,12 @@
+use crate::caster::capture_screen;
+
 mod caster;
 mod receiver;
 mod ui;
 mod network;
 
 fn main() {
-    println!("Commit di prova");
+    if let Err(e) = capture_screen() {
+        eprintln!("Error during screen capture: {}", e);
+    }
 }
