@@ -3,6 +3,7 @@ use std::env;
 
 mod caster;
 mod receiver;
+mod ui;
 
 use receiver::receive_frame;
 
@@ -18,13 +19,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Se l'argomento è "caster", esegui il caster
     if args[1] == "caster" {
-        let addr = "192.168.1.3:8080"; // Indirizzo su cui il caster ascolta
+        let addr = "127.0.0.1:12345"; // Indirizzo su cui il caster ascolta
         println!("Avviando il caster...");
         caster::start_caster(addr).await?;
     }
     // Se l'argomento è "receiver", esegui il receiver
     else if args[1] == "receiver" {
-        let addr = "192.168.1.3:8080"; // Indirizzo del caster
+        let addr = "127.0.0.1:12345"; // Indirizzo del caster
         let output_file = "received_frame.jpeg"; // File dove salvare il frame ricevuto
         println!("Avviando il receiver...");
         receive_frame(addr).await?;
