@@ -6,14 +6,15 @@ mod receiver;
 mod ui;
 
 use receiver::receive_frame;
+use ui::MyApp;  // Importa la struttura MyApp da ui.rs
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Verifica gli argomenti della riga di comando per determinare se eseguire come caster o receiver
+    // Verifica gli argomenti della riga di comando per determinare se eseguire come caster, receiver o UI
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <caster|receiver>", args[0]);
+        eprintln!("Usage: {} <caster|receiver|ui>", args[0]);
         std::process::exit(1);
     }
 
@@ -30,11 +31,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("Avviando il receiver...");
         receive_frame(addr).await?;
     }
+    // Se l'argomento è "ui", esegui l'interfaccia grafica
+    else if args[1] == "ui" {
+        let options = eframe::NativeOptions::default();
+        eframe::run_native("Screencast App", options, Box::new(|_cc| Box::new(MyApp::default())))?;
+    }
     // Se l'argomento non è valido, stampa un messaggio di errore
     else {
-        eprintln!("Usage: {} <caster|receiver>", args[0]);
+        eprintln!("Usage: {} <caster|receiver|ui>", args[0]);
         std::process::exit(1);
     }
 
     Ok(())
 }
+
