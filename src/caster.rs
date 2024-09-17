@@ -38,6 +38,7 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>) -> Result<(), Box<d
                 let frame_size = (jpeg_frame.len() as u32).to_be_bytes();  // Converti la lunghezza del frame in 4 byte
 
                 println!("Dimensione frame: {} byte", jpeg_frame.len());
+                println!("Contenuto del frame (primi 10 byte): {:?}", &jpeg_frame[..10]);
 
                 // Invia la dimensione del frame seguita dai dati del frame
                 if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
@@ -73,6 +74,7 @@ pub async fn start_caster(addr: &str) -> Result<(), Box<dyn Error>> {
 
                 tokio::spawn(async move {
                     while let Ok(frame) = rx.recv().await {
+                        println!("Ricevuto frame dal canale.");
                         // Leggi i primi 4 byte per la dimensione del frame
                         if frame.len() < 4 {
                             eprintln!("Errore: frame troppo piccolo per contenere la dimensione.");

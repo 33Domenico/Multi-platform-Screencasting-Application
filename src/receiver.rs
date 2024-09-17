@@ -31,6 +31,9 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                 let mut buffer = vec![0u8; frame_size];
                 stream.read_exact(&mut buffer).await?;
 
+                // Log dei primi byte del frame per debug
+                println!("Contenuto del frame (primi 10 byte): {:?}", &buffer[..10]);
+
                 // Decodifica il frame JPEG e gestisci eventuali errori
                 let img = ImageReader::new(std::io::Cursor::new(buffer))
                     .with_guessed_format()
@@ -55,10 +58,12 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                         height,
                         WindowOptions::default(),
                     ).expect("Impossibile creare la finestra!"));
+                    println!("Finestra creata con dimensioni: {}x{}", width, height);
                 }
 
                 // Se esiste la finestra, visualizza i frame
                 if let Some(ref mut win) = window {
+                    println!("Finestra già creata");
                     // Converti l'immagine in un buffer di pixel (u32 RGBA)
                     let buffer: Vec<u32> = img
                         .pixels()
@@ -75,11 +80,13 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                     // Mostra il buffer nella finestra
                     if win.is_open() {
                         println!("Visualizzando il frame...");
+                        println!("Buffer di pixel (primi 10 valori): {:?}", &buffer[..10]);
                         win.update_with_buffer(&buffer, width, height)
                             .unwrap();
+                        println!("Frame visualizzato con successo.");
                     } else {
                         eprintln!("La finestra è stata chiusa.");
-                        break;
+                        break Ok(());
                     }
                 }
             }
