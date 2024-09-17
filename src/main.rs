@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let addr = "127.0.0.1:12345"; // Indirizzo del caster
         let output_file = "received_frame.jpeg"; // File dove salvare il frame ricevuto
         println!("Avviando il receiver...");
-        receive_frame(addr, output_file).await?;
+        receive_frame(addr).await?;
     }
     // Se l'argomento non è valido, stampa un messaggio di errore
     else {

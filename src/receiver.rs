@@ -1,69 +1,87 @@
-use std::fs;
-use std::path::Path;
 use tokio::net::TcpStream;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self};
 use tokio::io::AsyncReadExt;
-use std::time::{SystemTime, UNIX_EPOCH};
+use image::ImageReader;
+use minifb::{Window, WindowOptions};
 
-//Si connette a un server TCP (caster) e riceve frame che sono salvati come JPEG
-pub async fn receive_frame(addr: &str, output_folder: &str) -> io::Result<()> {
-    //Creazione connessione asincrona al server
+pub async fn receive_frame(addr: &str) -> io::Result<()> {
+    // Connessione al caster
     let mut stream = TcpStream::connect(addr).await?;
 
-    //Verifica se la cartella esiste, altrimenti creala
-    let path = Path::new(output_folder);
-    if !path.exists() {
-        //Se la cartella specificata per salvare i frame non esiste viene creata
-        match fs::create_dir_all(output_folder) {
-            Ok(_) => {
-                println!("Cartella {} creata con successo.", output_folder);
-            },
-            Err(e) => {
-                eprintln!("Errore durante la creazione della cartella {}: {}", output_folder, e);
-                return Err(e);
-            }
-        }
-    }
+    // Variabili per gestire la finestra e la risoluzione
+    let mut window: Option<Window> = None;
+    let mut width: usize = 0;
+    let mut height: usize = 0;
 
     loop {
-        let mut size_buf = [0u8; 4];  //Buffer per leggere la dimensione del frame
+        let mut size_buf = [0u8; 4];  // Buffer per la dimensione del frame
 
-        //Leggi i primi 4 byte che contengono la dimensione del frame
+        // Leggi i primi 4 byte per ottenere la dimensione del frame
         match stream.read_exact(&mut size_buf).await {
             Ok(_) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
                 if frame_size > 10_000_000 {
-                    eprintln!("Dimensione del frame non valida: {} byte", frame_size);
+                    eprintln!("Frame troppo grande: {} byte", frame_size);
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Frame troppo grande"));
                 }
 
+                // Leggi il frame JPEG
                 let mut buffer = vec![0u8; frame_size];
-
                 stream.read_exact(&mut buffer).await?;
 
-                // Genera un nome unico per il file basato sul timestamp corrente
-                let start = SystemTime::now();
-                let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-                let filename = format!("{}/received_frame_{}.jpeg", output_folder, since_the_epoch.as_secs());
+                // Decodifica il frame JPEG e gestisci eventuali errori
+                let img = ImageReader::new(std::io::Cursor::new(buffer))
+                    .with_guessed_format()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Errore nel formato dell'immagine: {}", e)))?
+                    .decode()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Errore durante la decodifica dell'immagine: {}", e)))?;
 
-                // Log per verificare il percorso completo del file
-                println!("Salvando il file in: {}", filename);
+                println!("Frame decodificato con successo!");
 
-                // Salva il frame come file JPEG
-                let mut file = match File::create(&filename) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("Errore durante la creazione del file {}: {}", filename, e);
-                        return Err(e);
+                // Ottieni le dimensioni dell'immagine
+                let img = img.to_rgba8();
+                let (w, h) = img.dimensions();
+                println!("Dimensioni del frame: {}x{}", w, h);
+
+                // Se la finestra non esiste, creala
+                if window.is_none() {
+                    width = w as usize;
+                    height = h as usize;
+                    window = Some(Window::new(
+                        "Ricezione Frame",
+                        width,
+                        height,
+                        WindowOptions::default(),
+                    ).expect("Impossibile creare la finestra!"));
+                }
+
+                // Se esiste la finestra, visualizza i frame
+                if let Some(ref mut win) = window {
+                    // Converti l'immagine in un buffer di pixel (u32 RGBA)
+                    let buffer: Vec<u32> = img
+                        .pixels()
+                        .map(|p| {
+                            let rgba = p.0;
+                            let r = rgba[0] as u32;
+                            let g = rgba[1] as u32;
+                            let b = rgba[2] as u32;
+                            let a = rgba[3] as u32;
+                            (r << 16) | (g << 8) | b | (a << 24)  // Assicurati che l'ordine dei colori sia corretto
+                        })
+                        .collect();
+
+                    // Mostra il buffer nella finestra
+                    if win.is_open() {
+                        println!("Visualizzando il frame...");
+                        win.update_with_buffer(&buffer, width, height)
+                            .unwrap();
+                    } else {
+                        eprintln!("La finestra è stata chiusa.");
+                        break;
                     }
-                };
-
-                file.write_all(&buffer)?;
-
-                println!("Frame ricevuto e salvato in {}", filename);
+                }
             }
             Err(e) => {
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
@@ -72,3 +90,5 @@ pub async fn receive_frame(addr: &str, output_folder: &str) -> io::Result<()> {
         }
     }
 }
+
+
