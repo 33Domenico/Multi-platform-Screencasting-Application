@@ -41,19 +41,21 @@ impl eframe::App for MyApp {
                     self.caster_running = false; // Reset caster state when switching modes
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
+                    self.status_message = "Modalità selezionata: Caster".to_string(); // Aggiorna il messaggio di stato
                 }
                 if ui.button("Receiver").clicked() {
                     self.mode = Some(Modality::Receiver);
                     self.caster_running = false; // Reset caster state when switching modes
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
+                    self.status_message = "Modalità selezionata: Receiver".to_string(); // Aggiorna il messaggio di stato
                 }
             });
 
             if let Some(ref mode) = self.mode {
                 match mode {
                     Modality::Caster => {
-                        ui.label("Modalità selezionata: Caster");
+
 
                         if !self.caster_running {
                             if ui.button("Avvia").clicked() {
@@ -82,7 +84,7 @@ impl eframe::App for MyApp {
                         }
                     }
                     Modality::Receiver => {
-                        ui.label("Modalità selezionata: Receiver");
+
 
                         ui.horizontal(|ui| {
                             ui.label("Indirizzo caster:");
