@@ -1,7 +1,7 @@
 use eframe::egui;
 use crate::{caster, receiver};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
-// Enum per rappresentare la modalità
 #[derive(Debug, Clone)]
 enum Modality {
     Caster,
@@ -9,9 +9,12 @@ enum Modality {
 }
 
 pub struct MyApp {
-    mode: Option<Modality>, // Uso di Option<Modality> per la modalità
+    mode: Option<Modality>,
     caster_address: String,
     status_message: String,
+    caster_running: bool,
+    receiver_running: bool,
+    stop_signal: Arc<AtomicBool>,
 }
 
 impl Default for MyApp {
@@ -20,70 +23,101 @@ impl Default for MyApp {
             mode: None,
             caster_address: String::from("127.0.0.1:12345"),
             status_message: String::from("Seleziona una modalità per iniziare."),
+            caster_running: false,
+            receiver_running: false,
+            stop_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
-// Implementazione del trait `eframe::App` per `MyApp`
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Screencast Application");
 
-            // Seleziona se eseguire come caster o receiver
             ui.horizontal(|ui| {
                 if ui.button("Caster").clicked() {
                     self.mode = Some(Modality::Caster);
+                    self.caster_running = false; // Reset caster state when switching modes
+                    self.receiver_running = false;
+                    self.stop_signal.store(false, Ordering::SeqCst);
                 }
                 if ui.button("Receiver").clicked() {
                     self.mode = Some(Modality::Receiver);
+                    self.caster_running = false; // Reset caster state when switching modes
+                    self.receiver_running = false;
+                    self.stop_signal.store(false, Ordering::SeqCst);
                 }
             });
 
-            // Mostra la modalità selezionata e gestisci l'interazione
             if let Some(ref mode) = self.mode {
                 match mode {
                     Modality::Caster => {
                         ui.label("Modalità selezionata: Caster");
+
+                        if !self.caster_running {
+                            if ui.button("Avvia").clicked() {
+                                self.status_message = "Avviando il caster...".to_string();
+                                self.caster_running = true;
+                                self.stop_signal.store(false, Ordering::SeqCst);
+
+                                let stop_signal = self.stop_signal.clone();
+                                let ctx = ctx.clone();
+                                std::thread::spawn(move || {
+                                    tokio::runtime::Runtime::new().unwrap().block_on(async {
+                                        if let Err(e) = caster::start_caster("127.0.0.1:12345", stop_signal).await {
+                                            eprintln!("Errore: {}", e);
+                                        }
+                                    });
+                                    ctx.request_repaint();
+                                });
+                            }
+                        } else {
+                            if ui.button("Stop").clicked() {
+                                self.status_message = "Interrompendo il caster...".to_string();
+                                self.stop_signal.store(true, Ordering::SeqCst);
+                                self.caster_running = false;
+                                self.status_message = "Caster interrotto.".to_string();
+                            }
+                        }
                     }
                     Modality::Receiver => {
                         ui.label("Modalità selezionata: Receiver");
 
-                        // Mostra il campo di input per l'indirizzo del caster solo in modalità receiver
                         ui.horizontal(|ui| {
                             ui.label("Indirizzo caster:");
                             ui.text_edit_singleline(&mut self.caster_address);
                         });
-                    }
-                }
 
-                // Pulsante per avviare il processo
-                if ui.button("Avvia").clicked() {
-                    self.status_message = match mode {
-                        Modality::Caster => {
-                            let rt = tokio::runtime::Runtime::new().unwrap();
-                            rt.block_on(async {
-                                if let Err(e) = caster::start_caster("127.0.0.1:12345").await {
-                                    eprintln!("Errore: {}", e);
-                                }
-                            });
-                            "Caster avviato!".to_string()
+                        if !self.receiver_running {
+                            if ui.button("Avvia").clicked() {
+                                let addr = self.caster_address.clone();
+                                self.status_message = "Connettendo al caster...".to_string();
+                                self.receiver_running = true;
+                                self.stop_signal.store(false, Ordering::SeqCst);
+
+                                let stop_signal = self.stop_signal.clone();
+                                let ctx = ctx.clone();
+                                std::thread::spawn(move || {
+                                    tokio::runtime::Runtime::new().unwrap().block_on(async {
+                                        if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
+                                            eprintln!("Errore: {}", e);
+                                        }
+                                    });
+                                    ctx.request_repaint();
+                                });
+                            }
+                        } else {
+                            if ui.button("Stop").clicked() {
+                                self.status_message = "Interrompendo il receiver...".to_string();
+                                self.stop_signal.store(true, Ordering::SeqCst);
+                                self.receiver_running = false;
+                            }
                         }
-                        Modality::Receiver => {
-                            let addr = self.caster_address.clone();
-                            let rt = tokio::runtime::Runtime::new().unwrap();
-                            rt.block_on(async {
-                                if let Err(e) = receiver::receive_frame(&addr).await {
-                                    eprintln!("Errore: {}", e);
-                                }
-                            });
-                            format!("Receiver connesso a {}", self.caster_address)
-                        }
-                    };
+                    }
                 }
             }
 
-            // Mostra il messaggio di stato
             ui.label(&self.status_message);
         });
     }

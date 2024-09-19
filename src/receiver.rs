@@ -1,22 +1,19 @@
 use tokio::net::TcpStream;
-use std::io::{self};
+use std::io;
 use tokio::io::AsyncReadExt;
 use image::ImageReader;
 use minifb::{Window, WindowOptions};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
-pub async fn receive_frame(addr: &str) -> io::Result<()> {
-    // Connessione al caster
+pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
-
-    // Variabili per gestire la finestra e la risoluzione
     let mut window: Option<Window> = None;
     let mut width: usize = 0;
     let mut height: usize = 0;
 
-    loop {
-        let mut size_buf = [0u8; 4];  // Buffer per la dimensione del frame
+    while !stop_signal.load(Ordering::SeqCst) {
+        let mut size_buf = [0u8; 4];
 
-        // Leggi i primi 4 byte per ottenere la dimensione del frame
         match stream.read_exact(&mut size_buf).await {
             Ok(_) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
@@ -27,28 +24,18 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Frame troppo grande"));
                 }
 
-                // Leggi il frame JPEG
                 let mut buffer = vec![0u8; frame_size];
                 stream.read_exact(&mut buffer).await?;
 
-                // Log dei primi byte del frame per debug
-                println!("Contenuto del frame (primi 10 byte): {:?}", &buffer[..10]);
-
-                // Decodifica il frame JPEG e gestisci eventuali errori
                 let img = ImageReader::new(std::io::Cursor::new(buffer))
                     .with_guessed_format()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Errore nel formato dell'immagine: {}", e)))?
                     .decode()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Errore durante la decodifica dell'immagine: {}", e)))?;
 
-                println!("Frame decodificato con successo!");
-
-                // Ottieni le dimensioni dell'immagine
                 let img = img.to_rgba8();
                 let (w, h) = img.dimensions();
-                println!("Dimensioni del frame: {}x{}", w, h);
 
-                // Se la finestra non esiste, creala
                 if window.is_none() {
                     width = w as usize;
                     height = h as usize;
@@ -58,13 +45,9 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                         height,
                         WindowOptions::default(),
                     ).expect("Impossibile creare la finestra!"));
-                    println!("Finestra creata con dimensioni: {}x{}", width, height);
                 }
 
-                // Se esiste la finestra, visualizza i frame
                 if let Some(ref mut win) = window {
-                    println!("Finestra già creata");
-                    // Converti l'immagine in un buffer di pixel (u32 RGBA)
                     let buffer: Vec<u32> = img
                         .pixels()
                         .map(|p| {
@@ -73,20 +56,14 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
                             let g = rgba[1] as u32;
                             let b = rgba[2] as u32;
                             let a = rgba[3] as u32;
-                            (r << 16) | (g << 8) | b | (a << 24)  // Assicurati che l'ordine dei colori sia corretto
+                            (r << 16) | (g << 8) | b | (a << 24)
                         })
                         .collect();
 
-                    // Mostra il buffer nella finestra
-                    if win.is_open() {
-                        println!("Visualizzando il frame...");
-                        println!("Buffer di pixel (primi 10 valori): {:?}", &buffer[..10]);
-                        win.update_with_buffer(&buffer, width, height)
-                            .unwrap();
-                        println!("Frame visualizzato con successo.");
+                    if win.is_open() && !win.is_key_down(minifb::Key::Escape) {
+                        win.update_with_buffer(&buffer, width, height).unwrap();
                     } else {
-                        eprintln!("La finestra è stata chiusa.");
-                        break Ok(());
+                        break;
                     }
                 }
             }
@@ -96,6 +73,7 @@ pub async fn receive_frame(addr: &str) -> io::Result<()> {
             }
         }
     }
+
+    println!("Receiver fermato.");
+    Ok(())
 }
-
-
