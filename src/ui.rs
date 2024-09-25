@@ -1,13 +1,16 @@
-use eframe::egui;
+use eframe::{egui, Frame};
 use eframe::WindowBuilder;
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use winit::{
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    dpi::PhysicalPosition,
-    platform::run_return::EventLoopExtRunReturn, // per usare `run_return`
-};
+use egui::{Context, Widget};
+use winit::
+    event_loop::EventLoop;
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalPosition;
+use winit::event::{ElementState, Event, MouseButton, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
+use winit::window::{Window, WindowAttributes, WindowId};
+
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -22,11 +25,8 @@ pub struct MyApp {
     caster_running: bool,
     receiver_running: bool,
     stop_signal: Arc<AtomicBool>,
-    selecting_area: bool,
-    start_pos: Option<PhysicalPosition<f64>>,
-    end_pos: Option<PhysicalPosition<f64>>,
-    selected_area: Option<(f64, f64, f64, f64)>, // (x, y, width, height)
 }
+
 
 impl Default for MyApp {
     fn default() -> Self {
@@ -37,13 +37,10 @@ impl Default for MyApp {
             caster_running: false,
             receiver_running: false,
             stop_signal: Arc::new(AtomicBool::new(false)),
-            selecting_area: false,
-            start_pos: None,
-            end_pos: None,
-            selected_area: None,
         }
     }
 }
+
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -64,10 +61,14 @@ impl eframe::App for MyApp {
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
                     self.status_message = "Modalità selezionata: Receiver".to_string();
+
                 }
             });
 
+            let mut wp = WindowPortion::default();
             if let Some(ref mode) = self.mode {
+
+
                 match mode {
                     Modality::Caster => {
                         if !self.caster_running {
@@ -88,67 +89,16 @@ impl eframe::App for MyApp {
                                 });
                             }
 
+                            // Selezione area di schermo
                             if ui.button("Seleziona area").clicked() {
-                                self.selecting_area = true;
+
+                                wp.selecting_area = true;
                                 self.status_message = "Clicca e trascina per selezionare l'area".to_string();
+                                let event_loop = EventLoop::new().unwrap();
 
-                                let event_loop = EventLoop::<()>::new(); // Aggiunto tipo esplicito
-                                let screen_rect = ctx.input(|i| i.screen_rect()); // Corretto per accettare closure
-                                let width = screen_rect.width();
-                                let height = screen_rect.height();
 
-                                let window = WindowBuilder::new()
-                                    .with_transparent(true)
-                                    .with_decorations(false)
-                                    .with_inner_size(winit::dpi::LogicalSize::new(width as f64, height as f64))
-                                    .build(&event_loop)
-                                    .unwrap();
+                                event_loop.run_app(&mut wp);
 
-                                let mut start_pos = None;
-                                let mut end_pos = None;
-                                let mut selecting = false;
-
-                                event_loop.run_return(|event, _, control_flow| { // Usato run_return invece di run
-                                    *control_flow = ControlFlow::Wait;
-
-                                    match event {
-                                        Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                                            *control_flow = ControlFlow::Exit; // Modificato ExitWithCode
-                                        }
-                                        Event::WindowEvent { event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. }, .. } => {
-                                            if let Some(position) = window.current_monitor().map(|m| m.position()) { // Corretto metodo
-                                                start_pos = Some(position);
-                                                selecting = true;
-                                            }
-                                        }
-                                        Event::WindowEvent { event: WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. }, .. } => {
-                                            if selecting {
-                                                if let (Some(start), Some(end)) = (start_pos, end_pos) {
-                                                    let x = start.x.min(end.x);
-                                                    let y = start.y.min(end.y);
-                                                    let width = (start.x - end.x).abs();
-                                                    let height = (start.y - end.y).abs();
-                                                    self.selected_area = Some((x, y, width, height));
-                                                    self.selecting_area = false;
-                                                    self.status_message = format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height);
-                                                }
-                                                selecting = false;
-                                                *control_flow = ControlFlow::Exit; // Modificato ExitWithCode
-                                            }
-                                        }
-                                        Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, .. } => {
-                                            if selecting {
-                                                end_pos = Some(position);
-                                                window.request_redraw();
-                                            }
-                                        }
-                                        Event::MainEventsCleared => { // Aggiunto per gestire il redraw
-                                            // Qui puoi disegnare il rettangolo di selezione
-                                            println!("Ridisegnando il rettangolo di selezione");
-                                        }
-                                        _ => (),
-                                    }
-                                });
                             }
                         } else {
                             if ui.button("Stop").clicked() {
@@ -194,7 +144,7 @@ impl eframe::App for MyApp {
                 }
             }
 
-            if let Some((x, y, width, height)) = self.selected_area {
+            if let Some((x, y, width, height)) = wp.selected_area {
                 ui.label(format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height));
             }
 
@@ -202,3 +152,87 @@ impl eframe::App for MyApp {
         });
     }
 }
+
+pub struct WindowPortion{
+    window: Option<Window>,
+    selecting_area: bool,
+    start_pos: Option<PhysicalPosition<f64>>,
+    end_pos: Option<PhysicalPosition<f64>>,
+    selected_area: Option<(f64, f64, f64, f64)>, // (x, y, width, height)
+    status_message: String
+}
+
+impl Default for WindowPortion {
+    fn default() -> Self {
+        Self {
+            window: None,
+            selecting_area: false,
+            start_pos: None,
+            end_pos: None,
+            selected_area: None,
+            status_message: String::new()
+        }
+    }
+}
+
+
+impl ApplicationHandler for WindowPortion{
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        println!("Sto creando la finestra");
+        self.window = Some(event_loop.create_window(WindowAttributes::default()).unwrap());
+        println!("Finestra creata");
+
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => {
+                self.selecting_area = false;  // Imposta `running` a false per uscire
+            }
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                if let Some(position) = self.window.as_ref().unwrap().current_monitor().map(|m| m.position()) {
+                    self.start_pos = Some(PhysicalPosition {
+                        x: position.x as f64,
+                        y: position.y as f64,
+                    });
+                    self.selecting_area = true;
+                }
+            }
+            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
+                if self.selecting_area {
+                    if let (Some(start), Some(end)) = (self.start_pos, self.end_pos) {
+                        let x = start.x.min(end.x);
+                        let y = start.y.min(end.y);
+                        let width = (start.x - end.x).abs();
+                        let height = (start.y - end.y).abs();
+                        self.selected_area = Some((x, y, width, height));
+                        self.selecting_area = false;
+                        self.status_message = format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height);
+                    }
+                    self.selecting_area = false;
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if self.selecting_area {
+                    self.end_pos = Some(PhysicalPosition {
+                        x: position.x as f64,
+                        y: position.y as f64,
+                    });
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
+                    }
+                }
+            }
+
+            /**
+            // Event::MainEventsCleared => {
+                // Disegna il rettangolo di selezione qui
+            }**/
+            _ => (),
+        }
+    }
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        todo!()
+    }
+}
+
