@@ -9,6 +9,8 @@ mod ui;
 
 use ui::MyApp;
 
+use eframe::epaint::Rect;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -23,7 +25,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let addr = "127.0.0.1:12345";
             println!("Avviando il caster...");
             let stop_signal = Arc::new(AtomicBool::new(false));
-            caster::start_caster(addr, stop_signal).await?;
+
+            // Definizione di un'area selezionata simulata
+            let selected_area = Some(Rect::from_min_max(
+                egui::pos2(100.0, 100.0),  // Minimo (x0, y0)
+                egui::pos2(400.0, 300.0)   // Massimo (x1, y1)
+            ));
+
+            caster::start_caster(addr, stop_signal, selected_area).await?;
         }
         "receiver" => {
             let addr = "127.0.0.1:12345";
@@ -40,5 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
     }
+
     Ok(())
 }

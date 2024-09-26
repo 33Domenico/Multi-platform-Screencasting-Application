@@ -126,17 +126,17 @@ impl App for MyApp {
 
                                     let stop_signal = self.stop_signal.clone();
                                     let ctx = ctx.clone();
-                                    let selected_area = self.selected_area;
+                                    let selected_area = self.selected_area;  // Pass the selected area
+
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = caster::start_caster("127.0.0.1:12345", stop_signal).await {
+                                            if let Err(e) = caster::start_caster("127.0.0.1:12345", stop_signal, selected_area).await {
                                                 eprintln!("Errore: {}", e);
                                             }
                                         });
                                         ctx.request_repaint();
                                     });
                                 }
-
                                 if ui.button("Seleziona area").clicked() {
                                     self.selecting_area = true;
                                     self.start_pos = None;
