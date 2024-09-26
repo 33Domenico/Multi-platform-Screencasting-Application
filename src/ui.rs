@@ -156,7 +156,36 @@ impl App for MyApp {
                             }
                         }
                         Modality::Receiver => {
-                            // ... (il codice per il receiver rimane invariato)
+                            ui.horizontal(|ui| {
+                                ui.label("Indirizzo caster:");
+                                ui.text_edit_singleline(&mut self.caster_address);
+                            });
+
+                            if !self.receiver_running {
+                                if ui.button("Avvia").clicked() {
+                                    let addr = self.caster_address.clone();
+                                    self.status_message = "Connettendo al caster...".to_string();
+                                    self.receiver_running = true;
+                                    self.stop_signal.store(false, Ordering::SeqCst);
+
+                                    let stop_signal = self.stop_signal.clone();
+                                    let ctx = ctx.clone();
+                                    std::thread::spawn(move || {
+                                        Runtime::new().unwrap().block_on(async {
+                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
+                                                eprintln!("Errore: {}", e);
+                                            }
+                                        });
+                                        ctx.request_repaint();
+                                    });
+                                }
+                            } else {
+                                if ui.button("Stop").clicked() {
+                                    self.status_message = "Interrompendo il receiver...".to_string();
+                                    self.stop_signal.store(true, Ordering::SeqCst);
+                                    self.receiver_running = false;
+                                }
+                            }
                         }
                     }
                 }
