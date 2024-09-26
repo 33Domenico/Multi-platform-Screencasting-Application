@@ -26,7 +26,7 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             mode: None,
-            caster_address: String::from("127.0.0.1:12345"),
+            caster_address: String::from(""),
             status_message: String::from("Seleziona una modalità per iniziare."),
             caster_running: false,
             receiver_running: false,
@@ -118,6 +118,11 @@ impl App for MyApp {
                 if let Some(ref mode) = self.mode {
                     match mode {
                         Modality::Caster => {
+                            ui.horizontal(|ui| {
+                                ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
+                                ui.text_edit_singleline(&mut self.caster_address);
+                            });
+
                             if !self.caster_running {
                                 if ui.button("Avvia").clicked() {
                                     self.status_message = "Avviando il caster...".to_string();
@@ -127,16 +132,18 @@ impl App for MyApp {
                                     let stop_signal = self.stop_signal.clone();
                                     let ctx = ctx.clone();
                                     let selected_area = self.selected_area;  // Pass the selected area
+                                    let caster_address = self.caster_address.clone();  // Use the IP input
 
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = caster::start_caster("127.0.0.1:12345", stop_signal, selected_area).await {
+                                            if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area).await {
                                                 eprintln!("Errore: {}", e);
                                             }
                                         });
                                         ctx.request_repaint();
                                     });
                                 }
+
                                 if ui.button("Seleziona area").clicked() {
                                     self.selecting_area = true;
                                     self.start_pos = None;
@@ -155,9 +162,10 @@ impl App for MyApp {
                                 }
                             }
                         }
+
                         Modality::Receiver => {
                             ui.horizontal(|ui| {
-                                ui.label("Indirizzo caster:");
+                                ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
