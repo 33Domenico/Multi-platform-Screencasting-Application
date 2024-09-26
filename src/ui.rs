@@ -1,8 +1,7 @@
-use eframe::{egui, App, Frame, CreationContext,NativeOptions,};
+use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use eframe::egui::{Rect, Pos2};
-use minifb::HasWindowHandle;
+use eframe::egui::{Rect, Pos2, Color32};
 use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone)]
@@ -60,19 +59,14 @@ impl MyApp {
                     let start = self.start_pos.unwrap();
                     self.selected_area = Some(Rect::from_two_pos(start, current_pos));
                     self.selecting_area = false;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                     self.status_message = format!("Area selezionata: {:?}", self.selected_area.unwrap());
+                }
+                if self.selecting_area && (pressed || released) {
+                    ctx.request_repaint();
                 }
             }
 
-            ctx.input(|i| {
-                if i.key_pressed(egui::Key::Escape) {
-                    self.selecting_area = false;
-                    self.start_pos = None;
-                    self.status_message = "Selezione area annullata".to_string();
-                }
-            });
-
-            ctx.request_repaint();
         }
     }
 }
@@ -80,25 +74,24 @@ impl MyApp {
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         if self.selecting_area {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true));
-
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 100)))
+                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 100)))
                 .show(ctx, |ui| {
+                    ui.colored_label(egui::Color32::WHITE, "Clicca e trascina per selezionare l'area.");
                     self.handle_selection(ctx);
                     if let Some(start) = self.start_pos {
                         if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
                             let rect = Rect::from_two_pos(start, current);
                             ui.painter().rect_stroke(rect, 0.0, (2.0, egui::Color32::WHITE));
+                            ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 50));
                         }
                     }
+
                 });
         } else {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default()
+                .show(ctx, |ui| {
                 ui.heading("Screencast Application");
-
                 ui.horizontal(|ui| {
                     if ui.button("Caster").clicked() {
                         self.mode = Some(Modality::Caster);
@@ -150,17 +143,12 @@ impl App for MyApp {
                                 }
 
                                 if ui.button("Seleziona area").clicked() {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
                                     self.selecting_area = true;
                                     self.start_pos = None;
                                     self.status_message = "Clicca e trascina per selezionare l'area".to_string();
                                 }
 
-                                if let Some(rect) = self.selected_area {
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-
-                                    ui.label(format!("Area selezionata: {:?}", rect));
-                                }
                             } else {
                                 if ui.button("Stop").clicked() {
                                     self.status_message = "Interrompendo il caster...".to_string();

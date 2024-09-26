@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             receiver::receive_frame(addr, stop_signal).await?;
         }
         "ui" => {
+
             let options = eframe::NativeOptions::default();
             eframe::run_native("Screencast App", options, Box::new(|_cc| Ok(Box::new(MyApp::default()))))?;
         }
