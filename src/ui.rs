@@ -18,7 +18,9 @@ pub struct MyApp {
     caster_running: bool,
     receiver_running: bool,
     stop_signal: Arc<AtomicBool>,
-    start_pos: Option<egui::Pos2>,  // Posizione iniziale per la selezione
+    start_pos: Option<egui::Pos2>, // Posizione iniziale per la selezione
+    selecting_area: bool,
+    selected_area: Option<(f32, f32, f32, f32)>, // Area selezionata
 }
 
 impl Default for MyApp {
@@ -31,49 +33,47 @@ impl Default for MyApp {
             receiver_running: false,
             stop_signal: Arc::new(AtomicBool::new(false)),
             start_pos: None,  // Inizializza la posizione di partenza
+            selecting_area: false, // Inizializza a false
+            selected_area: None, // Inizializza a None
         }
     }
 }
 
 impl MyApp {
-    fn handle_selection(&mut self, ctx: &egui::Context) -> Option<(f32, f32, f32, f32)> {
-        let mut selected_area = None;
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("selection")));
-
-        // Accedi all'input state
+    fn handle_selection(&mut self, ctx: &egui::Context) {
         ctx.input(|input| {
             // Primo click - inizia la selezione
             if input.pointer.any_pressed() {
-                if let Some(pos) = input.pointer.interact_pos() {
+                if let Some(pos) = input.pointer.hover_pos() {
                     self.start_pos = Some(pos);
                 }
             }
 
             // Rilascio - termina la selezione
             if input.pointer.any_released() {
-                if let Some(pos) = input.pointer.interact_pos() {
+                if let Some(pos) = input.pointer.hover_pos() {
                     if let Some(start) = self.start_pos {
                         let min_x = start.x.min(pos.x);
                         let min_y = start.y.min(pos.y);
                         let width = (start.x - pos.x).abs();
                         let height = (start.y - pos.y).abs();
 
-                        selected_area = Some((min_x, min_y, width, height));
+                        self.selected_area = Some((min_x, min_y, width, height));
                         self.start_pos = None; // Resetta la posizione di inizio
+                        self.selecting_area = false; // Disattiva la selezione dopo aver selezionato
                     }
                 }
             }
 
             // Se l'utente sta trascinando, disegna il rettangolo
             if let Some(start) = self.start_pos {
-                if let Some(current_pos) = input.pointer.interact_pos() {
+                if let Some(current_pos) = input.pointer.hover_pos() {
                     let rect = egui::Rect::from_two_pos(start, current_pos);
-                    painter.rect_stroke(rect, 0.0, (2.0, egui::Color32::RED));  // rettangolo rosso
+                    ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("selection")))
+                        .rect_stroke(rect, 0.0, (2.0, egui::Color32::RED)); // rettangolo rosso
                 }
             }
         });
-
-        selected_area
     }
 }
 
@@ -88,6 +88,8 @@ impl eframe::App for MyApp {
                     self.caster_running = false;
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
+                    self.selecting_area = false; // Assicurati che la selezione sia disattivata
+                    self.selected_area = None; // Resetta l'area selezionata
                     self.status_message = "Modalità selezionata: Caster".to_string();
                 }
                 if ui.button("Receiver").clicked() {
@@ -95,11 +97,12 @@ impl eframe::App for MyApp {
                     self.caster_running = false;
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
+                    self.selecting_area = false; // Assicurati che la selezione sia disattivata
+                    self.selected_area = None; // Resetta l'area selezionata
                     self.status_message = "Modalità selezionata: Receiver".to_string();
                 }
             });
 
-            // Selezione dell'area
             if let Some(ref mode) = self.mode {
                 match mode {
                     Modality::Caster => {
@@ -121,12 +124,21 @@ impl eframe::App for MyApp {
                                 });
                             }
 
+                            // Selezione area di schermo
                             if ui.button("Seleziona area").clicked() {
+                                self.selecting_area = true; // Attiva la selezione
+                                self.start_pos = None; // Resetta la posizione di inizio
                                 self.status_message = "Clicca e trascina per selezionare l'area".to_string();
                             }
 
-                            if let Some((x, y, width, height)) = self.handle_selection(ctx) {
-                                ui.label(format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height));
+                            // Gestisci la selezione dell'area
+                            if self.selecting_area {
+                                self.handle_selection(ctx); // Chiama la funzione per gestire la selezione
+
+                                // Se l'area è stata selezionata, visualizza le coordinate
+                                if let Some((x, y, width, height)) = self.selected_area {
+                                    ui.label(format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height));
+                                }
                             }
                         } else {
                             if ui.button("Stop").clicked() {
