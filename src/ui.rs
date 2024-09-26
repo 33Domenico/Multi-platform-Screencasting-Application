@@ -3,14 +3,7 @@ use eframe::WindowBuilder;
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use egui::{Context, Widget};
-use winit::
-    event_loop::EventLoop;
-use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, Event, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
-use winit::window::{Window, WindowAttributes, WindowId};
-
+use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -25,8 +18,8 @@ pub struct MyApp {
     caster_running: bool,
     receiver_running: bool,
     stop_signal: Arc<AtomicBool>,
+    start_pos: Option<egui::Pos2>,  // Posizione iniziale per la selezione
 }
-
 
 impl Default for MyApp {
     fn default() -> Self {
@@ -37,10 +30,52 @@ impl Default for MyApp {
             caster_running: false,
             receiver_running: false,
             stop_signal: Arc::new(AtomicBool::new(false)),
+            start_pos: None,  // Inizializza la posizione di partenza
         }
     }
 }
 
+impl MyApp {
+    fn handle_selection(&mut self, ctx: &egui::Context) -> Option<(f32, f32, f32, f32)> {
+        let mut selected_area = None;
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("selection")));
+
+        // Accedi all'input state
+        ctx.input(|input| {
+            // Primo click - inizia la selezione
+            if input.pointer.any_pressed() {
+                if let Some(pos) = input.pointer.interact_pos() {
+                    self.start_pos = Some(pos);
+                }
+            }
+
+            // Rilascio - termina la selezione
+            if input.pointer.any_released() {
+                if let Some(pos) = input.pointer.interact_pos() {
+                    if let Some(start) = self.start_pos {
+                        let min_x = start.x.min(pos.x);
+                        let min_y = start.y.min(pos.y);
+                        let width = (start.x - pos.x).abs();
+                        let height = (start.y - pos.y).abs();
+
+                        selected_area = Some((min_x, min_y, width, height));
+                        self.start_pos = None; // Resetta la posizione di inizio
+                    }
+                }
+            }
+
+            // Se l'utente sta trascinando, disegna il rettangolo
+            if let Some(start) = self.start_pos {
+                if let Some(current_pos) = input.pointer.interact_pos() {
+                    let rect = egui::Rect::from_two_pos(start, current_pos);
+                    painter.rect_stroke(rect, 0.0, (2.0, egui::Color32::RED));  // rettangolo rosso
+                }
+            }
+        });
+
+        selected_area
+    }
+}
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -61,14 +96,11 @@ impl eframe::App for MyApp {
                     self.receiver_running = false;
                     self.stop_signal.store(false, Ordering::SeqCst);
                     self.status_message = "Modalità selezionata: Receiver".to_string();
-
                 }
             });
 
-            let mut wp = WindowPortion::default();
+            // Selezione dell'area
             if let Some(ref mode) = self.mode {
-
-
                 match mode {
                     Modality::Caster => {
                         if !self.caster_running {
@@ -80,7 +112,7 @@ impl eframe::App for MyApp {
                                 let stop_signal = self.stop_signal.clone();
                                 let ctx = ctx.clone();
                                 std::thread::spawn(move || {
-                                    tokio::runtime::Runtime::new().unwrap().block_on(async {
+                                    Runtime::new().unwrap().block_on(async {
                                         if let Err(e) = caster::start_caster("127.0.0.1:12345", stop_signal).await {
                                             eprintln!("Errore: {}", e);
                                         }
@@ -89,16 +121,12 @@ impl eframe::App for MyApp {
                                 });
                             }
 
-                            // Selezione area di schermo
                             if ui.button("Seleziona area").clicked() {
-
-                                wp.selecting_area = true;
                                 self.status_message = "Clicca e trascina per selezionare l'area".to_string();
-                                let event_loop = EventLoop::new().unwrap();
+                            }
 
-
-                                event_loop.run_app(&mut wp);
-
+                            if let Some((x, y, width, height)) = self.handle_selection(ctx) {
+                                ui.label(format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height));
                             }
                         } else {
                             if ui.button("Stop").clicked() {
@@ -125,7 +153,7 @@ impl eframe::App for MyApp {
                                 let stop_signal = self.stop_signal.clone();
                                 let ctx = ctx.clone();
                                 std::thread::spawn(move || {
-                                    tokio::runtime::Runtime::new().unwrap().block_on(async {
+                                    Runtime::new().unwrap().block_on(async {
                                         if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
                                             eprintln!("Errore: {}", e);
                                         }
@@ -144,22 +172,19 @@ impl eframe::App for MyApp {
                 }
             }
 
-            if let Some((x, y, width, height)) = wp.selected_area {
-                ui.label(format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height));
-            }
-
             ui.label(&self.status_message);
         });
     }
 }
 
-pub struct WindowPortion{
+
+/*
+pub struct WindowPortion {
     window: Option<Window>,
     selecting_area: bool,
     start_pos: Option<PhysicalPosition<f64>>,
     end_pos: Option<PhysicalPosition<f64>>,
     selected_area: Option<(f64, f64, f64, f64)>, // (x, y, width, height)
-    status_message: String
 }
 
 impl Default for WindowPortion {
@@ -170,69 +195,59 @@ impl Default for WindowPortion {
             start_pos: None,
             end_pos: None,
             selected_area: None,
-            status_message: String::new()
         }
     }
 }
 
-
-impl ApplicationHandler for WindowPortion{
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        println!("Sto creando la finestra");
-        self.window = Some(event_loop.create_window(WindowAttributes::default()).unwrap());
-        println!("Finestra creata");
-
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
-        match event {
-            WindowEvent::CloseRequested => {
-                self.selecting_area = false;  // Imposta `running` a false per uscire
+impl WindowPortion {
+    fn run_selection(&mut self) {
+        let event_loop = match EventLoop::new() {
+            Ok(event_loop) => event_loop,
+            Err(e) => {
+                eprintln!("Errore durante la creazione dell'EventLoop: {}", e);
+                return;
             }
-            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                if let Some(position) = self.window.as_ref().unwrap().current_monitor().map(|m| m.position()) {
-                    self.start_pos = Some(PhysicalPosition {
-                        x: position.x as f64,
-                        y: position.y as f64,
-                    });
-                    self.selecting_area = true;
-                }
-            }
-            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
-                if self.selecting_area {
-                    if let (Some(start), Some(end)) = (self.start_pos, self.end_pos) {
-                        let x = start.x.min(end.x);
-                        let y = start.y.min(end.y);
-                        let width = (start.x - end.x).abs();
-                        let height = (start.y - end.y).abs();
-                        self.selected_area = Some((x, y, width, height));
-                        self.selecting_area = false;
-                        self.status_message = format!("Area selezionata: ({}, {}, {}, {})", x, y, width, height);
+        };
+        let window = Window::new(&event_loop).unwrap();
+        self.window = Some(window);
+
+        event_loop.run_return(|event, _, control_flow| {
+            *control_flow = ControlFlow::Wait;
+
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Wait;
+                    },
+
+                    WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                        if let Some(window) = &self.window {
+                            self.start_pos = Some(window.inner_position().unwrap());
+                            self.selecting_area = true;
+                        }
                     }
-                    self.selecting_area = false;
-                }
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                if self.selecting_area {
-                    self.end_pos = Some(PhysicalPosition {
-                        x: position.x as f64,
-                        y: position.y as f64,
-                    });
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
+                    WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
+                        if self.selecting_area {
+                            if let (Some(start), Some(end)) = (self.start_pos, self.end_pos) {
+                                let x = start.x.min(end.x);
+                                let y = start.y.min(end.y);
+                                let width = (start.x - end.x).abs();
+                                let height = (start.y - end.y).abs();
+                                self.selected_area = Some((x, y, width, height));
+                                self.selecting_area = false;
+                            }
+                        }
                     }
-                }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        if self.selecting_area {
+                            self.end_pos = Some(PhysicalPosition { x: position.x as f64, y: position.y as f64 });
+                        }
+                    }
+                    _ => (),
+                },
+                _ => (),
             }
-
-            /**
-            // Event::MainEventsCleared => {
-                // Disegna il rettangolo di selezione qui
-            }**/
-            _ => (),
-        }
-    }
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        todo!()
+        });
     }
 }
-
+*/
