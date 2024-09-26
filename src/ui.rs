@@ -1,7 +1,7 @@
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use eframe::egui::{Rect, Pos2, Color32};
+use eframe::egui::{Rect, Pos2, Color32, UiBuilder};
 use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone)]
@@ -77,7 +77,25 @@ impl App for MyApp {
             egui::CentralPanel::default()
                 .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 100)))
                 .show(ctx, |ui| {
-                    ui.colored_label(egui::Color32::WHITE, "Clicca e trascina per selezionare l'area.");
+                    let screen_rect = ui.max_rect();
+
+                    // Calcola la posizione centrale
+                    let center_x = screen_rect.center().x;
+                    let center_y = screen_rect.center().y;
+                    let rect=Rect::from_center_size(
+                        Pos2::new(center_x, center_y), // Posizione centrale
+                        egui::vec2(200.0, 50.0), // Dimensioni del rettangolo del testo
+                    );
+                    // Crea un layout personalizzato e centra il testo
+                    ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), rect), |ui| {
+                            // Centra il testo
+                            ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
+                                ui.colored_label(egui::Color32::WHITE, "Clicca e trascina per selezionare l'area.");
+                            });
+                        },
+                    );
+
+
                     self.handle_selection(ctx);
                     if let Some(start) = self.start_pos {
                         if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
