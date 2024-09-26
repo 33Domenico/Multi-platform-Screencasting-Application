@@ -2,6 +2,7 @@ use std::error::Error;
 use std::env;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use eframe::egui::ViewportBuilder;
 
 mod caster;
 mod receiver;
@@ -28,8 +29,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             // Definizione di un'area selezionata simulata
             let selected_area = Some(Rect::from_min_max(
-                egui::pos2(100.0, 100.0),  // Minimo (x0, y0)
-                egui::pos2(400.0, 300.0)   // Massimo (x1, y1)
+                eframe::egui::pos2(100.0, 100.0),  // Minimo (x0, y0)
+                eframe::egui::pos2(400.0, 300.0)   // Massimo (x1, y1)
             ));
 
             caster::start_caster(addr, stop_signal, selected_area).await?;

@@ -1,7 +1,8 @@
-use eframe::{egui, App, Frame, CreationContext};
+use eframe::{egui, App, Frame, CreationContext,NativeOptions,};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use egui::{Rect, Pos2};
+use eframe::egui::{Rect, Pos2};
+use minifb::HasWindowHandle;
 use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone)]
@@ -77,8 +78,12 @@ impl MyApp {
 }
 
 impl App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         if self.selecting_area {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true));
+
             egui::CentralPanel::default()
                 .frame(egui::Frame::none().fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 100)))
                 .show(ctx, |ui| {
@@ -151,6 +156,9 @@ impl App for MyApp {
                                 }
 
                                 if let Some(rect) = self.selected_area {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+
                                     ui.label(format!("Area selezionata: {:?}", rect));
                                 }
                             } else {
