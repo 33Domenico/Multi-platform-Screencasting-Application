@@ -107,8 +107,7 @@ impl App for MyApp {
 
                 });
         } else {
-            egui::CentralPanel::default()
-                .show(ctx, |ui| {
+            egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("Screencast Application");
                 ui.horizontal(|ui| {
                     if ui.button("Caster").clicked() {

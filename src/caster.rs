@@ -8,6 +8,42 @@ use scrap::{Capturer, Display, Frame};
 use image::{ImageBuffer, RgbImage, DynamicImage};
 use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration};
+use device_query::{DeviceQuery, DeviceState, Keycode};
+
+
+struct HotkeyState {
+    paused: Arc<AtomicBool>,
+    screen_blanked: Arc<AtomicBool>,
+    terminate: Arc<AtomicBool>,
+}
+
+fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
+    let device_state = DeviceState::new();
+    let mut last_keys = Vec::new();
+
+    loop {
+        let keys: Vec<Keycode> = device_state.get_keys();
+
+        if keys != last_keys {
+            if keys.contains(&Keycode::F1) {
+                hotkey_state.paused.fetch_xor(true, Ordering::SeqCst);
+                println!("Trasmissione {}.", if hotkey_state.paused.load(Ordering::SeqCst) { "paused" } else { "resumed" });
+            }
+            if keys.contains(&Keycode::F2) {
+                hotkey_state.screen_blanked.fetch_xor(true, Ordering::SeqCst);
+                println!("Schermo {}.", if hotkey_state.screen_blanked.load(Ordering::SeqCst) { "blanked" } else { "unblanked" });
+            }
+            if keys.contains(&Keycode::Escape) {
+                hotkey_state.terminate.store(true, Ordering::SeqCst);
+                println!("Terminazione richiesta.");
+                break;
+            }
+        }
+
+        last_keys = keys;
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
 
 async fn compress_frame_to_jpeg(frame: &[u8], width: usize, height: usize) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut img_buffer: RgbImage = ImageBuffer::new(width as u32, height as u32);
@@ -46,11 +82,15 @@ fn crop_frame_to_area(
     cropped_frame
 }
 
-async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>) -> Result<(), Box<dyn Error>> {
+async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>, hotkey_state: Arc<HotkeyState>) -> Result<(), Box<dyn Error>> {
     let display = Display::primary()?;
     let mut capturer = Capturer::new(display)?;
+    while !stop_signal.load(Ordering::SeqCst) && !hotkey_state.terminate.load(Ordering::SeqCst) {
+        if hotkey_state.paused.load(Ordering::SeqCst) {
+            sleep(Duration::from_millis(100)).await;
+            continue;
+        }
 
-    while !stop_signal.load(Ordering::SeqCst) {
         let width = capturer.width();
         let height = capturer.height();
 
@@ -77,13 +117,21 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
 
                 let (cropped_frame, cropped_width, cropped_height) = selected_frame;
 
-                let jpeg_frame = compress_frame_to_jpeg(&cropped_frame, cropped_width, cropped_height).await?;
-                let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
-
-                println!("Dimensione frame: {} byte", jpeg_frame.len());
-
-                if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
-                    eprintln!("Errore nell'invio del frame: {}", e);
+                if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
+                    // Invia un frame nero quando lo schermo è blankato
+                    let blank_frame = vec![0; cropped_width * cropped_height * 4];
+                    let jpeg_frame = compress_frame_to_jpeg(&blank_frame, cropped_width, cropped_height).await?;
+                    let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
+                    if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
+                        eprintln!("Errore nell'invio del frame: {}", e);
+                    }
+                } else {
+                    let jpeg_frame = compress_frame_to_jpeg(&cropped_frame, cropped_width, cropped_height).await?;
+                    let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
+                    println!("Dimensione frame: {} byte", jpeg_frame.len());
+                    if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
+                        eprintln!("Errore nell'invio del frame: {}", e);
+                    }
                 }
                 println!("Frame compresso e inviato.");
             }
@@ -105,21 +153,32 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
     let listener = TcpListener::bind(addr).await?;
     let (tx, _rx) = broadcast::channel::<Vec<u8>>(10);
     let tx = Arc::new(tx);
-
     println!("Caster avviato su {}", addr);
+
+    let hotkey_state = Arc::new(HotkeyState {
+        paused: Arc::new(AtomicBool::new(false)),
+        screen_blanked: Arc::new(AtomicBool::new(false)),
+        terminate: Arc::new(AtomicBool::new(false)),
+    });
+
+    let hotkey_state_clone = Arc::clone(&hotkey_state);
+    std::thread::spawn(move || {
+        handle_hotkeys(hotkey_state_clone);
+    });
 
     let tx_clone = Arc::clone(&tx);
     let stop_signal_clone = Arc::clone(&stop_signal);
+    let hotkey_state_clone = Arc::clone(&hotkey_state);
 
     tokio::spawn(async move {
-        while !stop_signal_clone.load(Ordering::SeqCst) {
+        while !stop_signal_clone.load(Ordering::SeqCst) && !hotkey_state_clone.terminate.load(Ordering::SeqCst) {
             if let Ok((mut socket, addr)) = listener.accept().await {
                 println!("Nuova connessione da: {}", addr);
                 let mut rx = tx_clone.subscribe();
                 let stop_signal_client = Arc::clone(&stop_signal_clone);
-
+                let hotkey_state_client = Arc::clone(&hotkey_state_clone);
                 tokio::spawn(async move {
-                    while !stop_signal_client.load(Ordering::SeqCst) {
+                    while !stop_signal_client.load(Ordering::SeqCst) && !hotkey_state_client.terminate.load(Ordering::SeqCst) {
                         match rx.recv().await {
                             Ok(frame) => {
                                 if frame.len() < 4 {
@@ -128,7 +187,6 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
                                 }
                                 let frame_size_bytes = &frame[0..4];
                                 let frame_data = &frame[4..];
-
                                 if socket.write_all(&frame_size_bytes).await.is_err() ||
                                     socket.write_all(&frame_data).await.is_err() {
                                     eprintln!("Errore nell'invio del frame al client {}", addr);
@@ -148,8 +206,7 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
         println!("Listener TCP interrotto.");
     });
 
-    capture_screen(&*Arc::clone(&tx), stop_signal, selected_area).await?;  // Pass the selected area
-
+    capture_screen(&*Arc::clone(&tx), stop_signal, selected_area, Arc::clone(&hotkey_state)).await?;
     println!("Caster completamente fermato.");
     Ok(())
 }
