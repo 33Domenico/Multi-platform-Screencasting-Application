@@ -1,8 +1,12 @@
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use eframe::egui::{Rect, Pos2, Color32, UiBuilder};
+use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget};
 use tokio::runtime::Runtime;
+use image::{ImageBuffer, Rgba};
+use scrap::{Capturer, Display};
+use std::time::Duration;
+use std::thread;
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -20,6 +24,7 @@ pub struct MyApp {
     start_pos: Option<Pos2>,
     selecting_area: bool,
     selected_area: Option<Rect>,
+    screenshot: Option<egui::TextureHandle>
 }
 
 impl Default for MyApp {
@@ -34,6 +39,7 @@ impl Default for MyApp {
             start_pos: None,
             selecting_area: false,
             selected_area: None,
+            screenshot: None,
         }
     }
 }
@@ -45,6 +51,7 @@ impl MyApp {
 
     fn handle_selection(&mut self, ctx: &egui::Context) {
         if self.selecting_area {
+            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
             let response = ctx.input(|i| {
                 let pos = i.pointer.hover_pos();
                 let pressed = i.pointer.primary_pressed();
@@ -66,19 +73,78 @@ impl MyApp {
                     ctx.request_repaint();
                 }
             }
-
+        }else {
+            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
         }
     }
+
+
+    fn capture_screenshot(&mut self, ctx: &egui::Context) {
+        let display = match Display::primary() {
+            Ok(display) => display,
+            Err(e) => {
+                return;
+            }
+        };
+
+        let mut capturer = match scrap::Capturer::new(display) {
+            Ok(capturer) => capturer,
+            Err(e) => {
+                eprintln!("Errore nella creazione del capturer: {}", e);
+                return;
+            }
+        };
+
+        let width = capturer.width();
+        let height = capturer.height();
+
+        let frame = loop {
+            match capturer.frame() {
+                Ok(frame) => break frame,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    // Attendere un po' prima di riprovare
+                    thread::sleep(Duration::from_millis(100)); // Attende 100ms
+                    continue; // Riprova a catturare il frame
+                }
+                Err(e) => {
+                    eprintln!("Errore nella cattura del frame: {}", e);
+                    return;
+                }
+            }
+        };
+
+        let mut img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width as u32, height as u32);
+        for (i, pixel) in img_buffer.pixels_mut().enumerate() {
+            let idx = i * 4;
+            *pixel = Rgba([frame[idx + 2], frame[idx + 1], frame[idx], 255]);
+        }
+
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [width, height],
+            &img_buffer.into_raw(),
+        );
+
+        self.screenshot = Some(ctx.load_texture(
+            "screenshot",
+            color_image,
+            egui::TextureOptions::LINEAR,
+        ));
+    }
+
 }
 
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         if self.selecting_area {
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 100)))
+                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 200)))
                 .show(ctx, |ui| {
+                    if let Some(texture) = &self.screenshot {
+                        let size=ui.available_size();
+                        let image=Image::from_texture(texture).fit_to_exact_size(size).tint(Color32::from_rgba_unmultiplied(110, 110, 110, 200));
+                        image.ui(ui);
+                    }
                     let screen_rect = ui.max_rect();
-
                     // Calcola la posizione centrale
                     let center_x = screen_rect.center().x;
                     let center_y = screen_rect.center().y;
@@ -90,7 +156,7 @@ impl App for MyApp {
                     ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), rect), |ui| {
                             // Centra il testo
                             ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
-                                ui.colored_label(egui::Color32::WHITE, "Clicca e trascina per selezionare l'area.");
+                                ui.colored_label(egui::Color32::WHITE, egui::RichText::new("Clicca e trascina per selezionare l'area").strong());
                             });
                         },
                     );
@@ -148,7 +214,7 @@ impl App for MyApp {
                                     let ctx = ctx.clone();
                                     let selected_area = self.selected_area;  // Pass the selected area
                                     let caster_address = self.caster_address.clone();  // Use the IP input
-
+                                    self.selected_area=None;
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area).await {
@@ -160,6 +226,7 @@ impl App for MyApp {
                                 }
 
                                 if ui.button("Seleziona area").clicked() {
+                                    self.capture_screenshot(ctx);
                                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
                                     self.selecting_area = true;
                                     self.start_pos = None;
