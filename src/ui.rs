@@ -135,6 +135,18 @@ impl MyApp {
 
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
+        // Controlla se è stato premuto ESC
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // Interrompi la trasmissione se sta avvenendo
+            if self.caster_running || self.receiver_running {
+                self.stop_signal.store(true, Ordering::SeqCst);
+                self.caster_running = false;
+                self.receiver_running = false;
+                self.status_message = "Trasmissione interrotta. Sei tornato allo stato iniziale.".to_string();
+
+            }
+        }
+
         if self.selecting_area {
             egui::CentralPanel::default()
                 .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 200)))
@@ -145,23 +157,18 @@ impl App for MyApp {
                         image.ui(ui);
                     }
                     let screen_rect = ui.max_rect();
-                    // Calcola la posizione centrale
                     let center_x = screen_rect.center().x;
                     let center_y = screen_rect.center().y;
-                    let rect=Rect::from_center_size(
-                        Pos2::new(center_x, center_y), // Posizione centrale
-                        egui::vec2(200.0, 50.0), // Dimensioni del rettangolo del testo
+                    let rect = Rect::from_center_size(
+                        Pos2::new(center_x, center_y),
+                        egui::vec2(200.0, 50.0)
                     );
-                    // Crea un layout personalizzato e centra il testo
                     ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), rect), |ui| {
-                            // Centra il testo
-                            ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
-                                ui.colored_label(egui::Color32::WHITE, egui::RichText::new("Clicca e trascina per selezionare l'area").strong());
-                            });
-                        },
+                        ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
+                            ui.colored_label(egui::Color32::WHITE, egui::RichText::new("Clicca e trascina per selezionare l'area").strong());
+                        });
+                    },
                     );
-
-
                     self.handle_selection(ctx);
                     if let Some(start) = self.start_pos {
                         if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
@@ -170,7 +177,6 @@ impl App for MyApp {
                             ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 50));
                         }
                     }
-
                 });
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -214,7 +220,8 @@ impl App for MyApp {
                                     let ctx = ctx.clone();
                                     let selected_area = self.selected_area;  // Pass the selected area
                                     let caster_address = self.caster_address.clone();  // Use the IP input
-                                    self.selected_area=None;
+                                    self.selected_area = None;
+
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area).await {
@@ -232,9 +239,8 @@ impl App for MyApp {
                                     self.start_pos = None;
                                     self.status_message = "Clicca e trascina per selezionare l'area".to_string();
                                 }
-
                             } else {
-                                if ui.button("Stop").clicked() {
+                                if ui.button("Stop").clicked() || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                                     self.status_message = "Interrompendo il caster...".to_string();
                                     self.stop_signal.store(true, Ordering::SeqCst);
                                     self.caster_running = false;
