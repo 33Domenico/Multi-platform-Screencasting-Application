@@ -285,7 +285,7 @@ impl App for MyApp {
                             });
 
                             if !self.receiver_running.load(Ordering::SeqCst) {
-                                self.status_message="Modalità selezionata: Reciver".to_string();
+                                self.status_message="Modalità selezionata: Receiver".to_string();
                                 if ui.button("Avvia").clicked()   {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
