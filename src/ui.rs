@@ -1,6 +1,7 @@
+
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock};
 use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget};
 use tokio::runtime::Runtime;
 use image::{ImageBuffer, Rgba};
@@ -18,13 +19,15 @@ pub struct MyApp {
     mode: Option<Modality>,
     caster_address: String,
     status_message: String,
-    caster_running: bool,
-    receiver_running: bool,
+    caster_running: Arc<AtomicBool>,
+    receiver_running: Arc<AtomicBool>,
     stop_signal: Arc<AtomicBool>,
     start_pos: Option<Pos2>,
     selecting_area: bool,
     selected_area: Option<Rect>,
-    screenshot: Option<egui::TextureHandle>
+    screenshot: Option<egui::TextureHandle>,
+    error_message: Arc<RwLock<Option<String>>>,
+    is_error: Arc<AtomicBool>,
 }
 
 impl Default for MyApp {
@@ -33,13 +36,15 @@ impl Default for MyApp {
             mode: None,
             caster_address: String::from(""),
             status_message: String::from("Seleziona una modalità per iniziare."),
-            caster_running: false,
-            receiver_running: false,
+            caster_running: Arc::new(AtomicBool::new(false)),
+            receiver_running:  Arc::new(AtomicBool::new(false)),
             stop_signal: Arc::new(AtomicBool::new(false)),
             start_pos: None,
             selecting_area: false,
             selected_area: None,
             screenshot: None,
+            error_message: Arc::new(RwLock::new(None)),
+            is_error: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -49,6 +54,22 @@ impl MyApp {
         Default::default()
     }
 
+    fn display_error(&self, ui: &mut egui::Ui) {
+        if self.is_error.load(Ordering::SeqCst) {
+            if let Some(error) = self.error_message.read().unwrap().as_ref() {
+                ui.label(egui::RichText::new(error).color(egui::Color32::RED));
+            }
+        }
+    }
+    fn clear_error(&self) {
+        *self.error_message.write().unwrap() = None;
+        self.is_error.store(false, Ordering::SeqCst);
+    }
+
+    fn set_error(&self, error: String) {
+        *self.error_message.write().unwrap() = Some(error);
+        self.is_error.store(true, Ordering::SeqCst);
+    }
     fn handle_selection(&mut self, ctx: &egui::Context) {
         if self.selecting_area {
             ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
@@ -135,16 +156,7 @@ impl MyApp {
 
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
-        // Controlla se è stato premuto ESC
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            // Interrompi la trasmissione se sta avvenendo
-            if self.caster_running || self.receiver_running {
-                self.stop_signal.store(true, Ordering::SeqCst);
-                self.caster_running = false;
-                self.receiver_running = false;
-                self.status_message = "Trasmissione interrotta. Sei tornato allo stato iniziale.".to_string();
-            }
-        }
+
 
         if self.selecting_area {
             egui::CentralPanel::default()
@@ -179,21 +191,24 @@ impl App for MyApp {
                 });
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
+                self.display_error(ui);
                 ui.heading("Screencast Application");
                 ui.horizontal(|ui| {
                     if ui.button("Caster").clicked() {
+                        self.clear_error();
                         self.mode = Some(Modality::Caster);
-                        self.caster_running = false;
-                        self.receiver_running = false;
+                        self.caster_running.store(false,Ordering::SeqCst);
+                        self.receiver_running.store(false,Ordering::SeqCst);
                         self.stop_signal.store(false, Ordering::SeqCst);
                         self.selecting_area = false;
                         self.selected_area = None;
                         self.status_message = "Modalità selezionata: Caster".to_string();
                     }
                     if ui.button("Receiver").clicked() {
+                        self.clear_error();
                         self.mode = Some(Modality::Receiver);
-                        self.caster_running = false;
-                        self.receiver_running = false;
+                        self.caster_running.store(false,Ordering::SeqCst);
+                        self.receiver_running.store(false,Ordering::SeqCst);
                         self.stop_signal.store(false, Ordering::SeqCst);
                         self.selecting_area = false;
                         self.selected_area = None;
@@ -209,17 +224,13 @@ impl App for MyApp {
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
-                            // Aggiunta di un controllo per l'indirizzo IP valido
-                            let is_valid_ip = self.caster_address.parse::<std::net::SocketAddr>().is_ok();
-                            if !is_valid_ip {
-                                ui.colored_label(Color32::RED, "Indirizzo IP non valido!");
-                            }
+                            if !self.caster_running.load(Ordering::SeqCst) {
+                                if ui.button("Avvia").clicked() {
+                                    self.clear_error(); // Pulisce l'errore quando si preme Avvia
+                                    // ... codice esistente ...
 
-                            if !self.caster_running {
-                                // Modifica del pulsante "Avvia" per non disabilitarlo
-                                if ui.button("Avvia").clicked() && is_valid_ip {
                                     self.status_message = "Avviando il caster...".to_string();
-                                    self.caster_running = true;
+                                    self.caster_running.store(true,Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
                                     let stop_signal = self.stop_signal.clone();
@@ -227,11 +238,21 @@ impl App for MyApp {
                                     let selected_area = self.selected_area;  // Pass the selected area
                                     let caster_address = self.caster_address.clone();  // Use the IP input
                                     self.selected_area = None;
-
+                                    let error_message = self.error_message.clone();
+                                    let is_error = self.is_error.clone();
+                                    let is_running=self.caster_running.clone();
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area).await {
+                                                let error = format!("Errore nel caster: {}", e);
+                                                *error_message.write().unwrap() = Some(error);
+                                                is_error.store(true, Ordering::SeqCst);
+                                                is_running.store(false,Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
+                                            }else {
+                                                is_running.store(false, Ordering::SeqCst);
+
+
                                             }
                                         });
                                         ctx.request_repaint();
@@ -246,51 +267,55 @@ impl App for MyApp {
                                     self.status_message = "Clicca e trascina per selezionare l'area".to_string();
                                 }
                             } else {
-                                if ui.button("Stop").clicked() || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                if ui.button("Stop").clicked() {
                                     self.status_message = "Interrompendo il caster...".to_string();
                                     self.stop_signal.store(true, Ordering::SeqCst);
-                                    self.caster_running = false;
+                                    self.caster_running.store(false,Ordering::SeqCst);
+
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
                             }
                         }
+
                         Modality::Receiver => {
                             ui.horizontal(|ui| {
-                                ui.label("Indirizzo caster: es. 127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
+                                ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
-                            // Aggiunta di un controllo per l'indirizzo IP valido
-                            let is_valid_ip = self.caster_address.parse::<std::net::SocketAddr>().is_ok();
-                            if !is_valid_ip {
-                                ui.colored_label(Color32::RED, "Indirizzo IP non valido!");
-                            }
-
-                            if !self.receiver_running {
-                                // Disabilita il pulsante "Avvia" se l'indirizzo IP non è valido
-                                if ui.button("Avvia").clicked() && is_valid_ip {
+                            if !self.receiver_running.load(Ordering::SeqCst) {
+                                if ui.button("Avvia").clicked()   {
+                                    self.clear_error();
                                     let addr = self.caster_address.clone();
                                     self.status_message = "Connettendo al caster...".to_string();
-                                    self.receiver_running = true;
+                                    self.receiver_running.store(true,Ordering::SeqCst) ;
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
                                     let stop_signal = self.stop_signal.clone();
                                     let ctx = ctx.clone();
+                                    let error_message = self.error_message.clone();
+                                    let is_error = self.is_error.clone();
+                                    let is_running=self.receiver_running.clone();
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
+                                                let error = format!("Errore nel caster: {}", e);
+                                                *error_message.write().unwrap() = Some(error);
+                                                is_error.store(true, Ordering::SeqCst);
+                                                is_running.store(false,Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
-                                                // Inviare un messaggio di errore per visualizzarlo nel contesto dell'interfaccia utente
-                                                ctx.request_repaint(); // Questo aiuta a garantire che l'UI si aggiorni.
+                                            }else {
+                                                is_running.store(false,Ordering::SeqCst);
                                             }
                                         });
+                                        ctx.request_repaint();
                                     });
                                 }
                             } else {
                                 if ui.button("Stop").clicked() {
                                     self.status_message = "Interrompendo il receiver...".to_string();
                                     self.stop_signal.store(true, Ordering::SeqCst);
-                                    self.receiver_running = false;
+                                    self.receiver_running.store(false,Ordering::SeqCst);
                                 }
                             }
                         }
