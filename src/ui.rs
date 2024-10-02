@@ -143,7 +143,6 @@ impl App for MyApp {
                 self.caster_running = false;
                 self.receiver_running = false;
                 self.status_message = "Trasmissione interrotta. Sei tornato allo stato iniziale.".to_string();
-
             }
         }
 
@@ -210,8 +209,15 @@ impl App for MyApp {
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
+                            // Aggiunta di un controllo per l'indirizzo IP valido
+                            let is_valid_ip = self.caster_address.parse::<std::net::SocketAddr>().is_ok();
+                            if !is_valid_ip {
+                                ui.colored_label(Color32::RED, "Indirizzo IP non valido!");
+                            }
+
                             if !self.caster_running {
-                                if ui.button("Avvia").clicked() {
+                                // Modifica del pulsante "Avvia" per non disabilitarlo
+                                if ui.button("Avvia").clicked() && is_valid_ip {
                                     self.status_message = "Avviando il caster...".to_string();
                                     self.caster_running = true;
                                     self.stop_signal.store(false, Ordering::SeqCst);
@@ -248,15 +254,21 @@ impl App for MyApp {
                                 }
                             }
                         }
-
                         Modality::Receiver => {
                             ui.horizontal(|ui| {
-                                ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
+                                ui.label("Indirizzo caster: es. 127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
+                            // Aggiunta di un controllo per l'indirizzo IP valido
+                            let is_valid_ip = self.caster_address.parse::<std::net::SocketAddr>().is_ok();
+                            if !is_valid_ip {
+                                ui.colored_label(Color32::RED, "Indirizzo IP non valido!");
+                            }
+
                             if !self.receiver_running {
-                                if ui.button("Avvia").clicked() {
+                                // Disabilita il pulsante "Avvia" se l'indirizzo IP non è valido
+                                if ui.button("Avvia").clicked() && is_valid_ip {
                                     let addr = self.caster_address.clone();
                                     self.status_message = "Connettendo al caster...".to_string();
                                     self.receiver_running = true;
@@ -268,9 +280,10 @@ impl App for MyApp {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
                                                 eprintln!("Errore: {}", e);
+                                                // Inviare un messaggio di errore per visualizzarlo nel contesto dell'interfaccia utente
+                                                ctx.request_repaint(); // Questo aiuta a garantire che l'UI si aggiorni.
                                             }
                                         });
-                                        ctx.request_repaint();
                                     });
                                 }
                             } else {
