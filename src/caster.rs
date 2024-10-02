@@ -90,7 +90,6 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
             sleep(Duration::from_millis(100)).await;
             continue;
         }
-
         let width = capturer.width();
         let height = capturer.height();
 
