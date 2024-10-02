@@ -225,6 +225,7 @@ impl App for MyApp {
                             });
 
                             if !self.caster_running.load(Ordering::SeqCst) {
+                                self.status_message="Modalità selezionata: Caster".to_string();
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error(); // Pulisce l'errore quando si preme Avvia
                                     // ... codice esistente ...
@@ -284,6 +285,7 @@ impl App for MyApp {
                             });
 
                             if !self.receiver_running.load(Ordering::SeqCst) {
+                                self.status_message="Modalità selezionata: Reciver".to_string();
                                 if ui.button("Avvia").clicked()   {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
