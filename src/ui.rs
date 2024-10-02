@@ -1,4 +1,3 @@
-
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock};
@@ -275,6 +274,10 @@ impl App for MyApp {
 
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
+
+
+                                ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
+                                    .color(egui::Color32::BLACK));
                             }
                         }
 
