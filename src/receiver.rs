@@ -11,12 +11,14 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
     let mut window: Option<Window> = None;
     let mut width: usize = 0;
     let mut height: usize = 0;
+    let read_timeout = Duration::from_secs(2);  // Timeout di 2 secondi per leggere i dati
 
     while !stop_signal.load(Ordering::SeqCst) {
         let mut size_buf = [0u8; 4];
 
-        match stream.read_exact(&mut size_buf).await {
-            Ok(_) => {
+        // Usa il timeout per la lettura
+        match timeout(read_timeout, stream.read_exact(&mut size_buf)).await {
+            Ok(Ok((_))) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
@@ -61,47 +63,43 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                         })
                         .collect();
 
-                    if win.is_open()  {
+                    if win.is_open() {
                         win.update_with_buffer(&buffer, width, height).unwrap();
                     } else {
                         break;
                     }
                 }
             }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                // Nessun frame disponibile, mantieni attiva la finestra
-                println!("Nessun frame disponibile, mantenendo la finestra aperta.");
+            Ok(Err(e)) => {
+                eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
+                return Err(e);
+            }
+            Err(_) => {
+                // Il timeout è scaduto, nessun frame ricevuto
+                println!("Timeout scaduto, nessun frame ricevuto. Mantengo la finestra attiva.");
+
                 if let Some(ref mut win) = window {
                     if win.is_open() {
-                        win.update();  // Mantieni la finestra aggiornata senza buffer
+                        win.update();  // Mantieni la finestra aggiornata senza nuovi frame
                     } else {
                         break;
                     }
                 }
 
-                // Aggiungi un piccolo ritardo per evitare di consumare troppe risorse
+                // Aggiungi un ritardo per evitare di consumare troppe risorse
                 sleep(Duration::from_millis(100)).await;
-                println!("Sto attendendo che il caster riprenda la trasmissione");
-            }
-            Err(e) => {
-                eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
-                return Err(e);
             }
         }
 
-        // Aggiorna la finestra anche se non ci sono nuovi frame, per mantenere la reattività
+        // Aggiorna la finestra per mantenerla reattiva
         if let Some(ref mut win) = window {
             if win.is_open() {
-                win.update();
-                println!("Sono entrato nell'if");
+                win.update();  // Continua ad aggiornare la finestra
             } else {
-                println!("Sono entrato nell'else");
                 break;
             }
         }
-        println!("Sono nel ciclo while");
     }
-
 
     println!("Receiver fermato.");
     Ok(())
