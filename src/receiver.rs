@@ -4,6 +4,7 @@ use tokio::io::AsyncReadExt;
 use image::ImageReader;
 use minifb::{Window, WindowOptions};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use tokio::time::{sleep, Duration, timeout};
 
 pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
@@ -67,12 +68,40 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                     }
                 }
             }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // Nessun frame disponibile, mantieni attiva la finestra
+                println!("Nessun frame disponibile, mantenendo la finestra aperta.");
+                if let Some(ref mut win) = window {
+                    if win.is_open() {
+                        win.update();  // Mantieni la finestra aggiornata senza buffer
+                    } else {
+                        break;
+                    }
+                }
+
+                // Aggiungi un piccolo ritardo per evitare di consumare troppe risorse
+                sleep(Duration::from_millis(100)).await;
+                println!("Sto attendendo che il caster riprenda la trasmissione");
+            }
             Err(e) => {
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
                 return Err(e);
             }
         }
+
+        // Aggiorna la finestra anche se non ci sono nuovi frame, per mantenere la reattività
+        if let Some(ref mut win) = window {
+            if win.is_open() {
+                win.update();
+                println!("Sono entrato nell'if");
+            } else {
+                println!("Sono entrato nell'else");
+                break;
+            }
+        }
+        println!("Sono nel ciclo while");
     }
+
 
     println!("Receiver fermato.");
     Ok(())
