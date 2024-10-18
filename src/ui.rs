@@ -247,13 +247,10 @@ impl App for MyApp {
                                                 let error = format!("Errore nel caster: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
-                                                is_running.store(false,Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
-                                            }else {
+                                            }
                                                 is_running.store(false, Ordering::SeqCst);
 
-
-                                            }
                                         });
                                         ctx.request_repaint();
                                     });
@@ -307,11 +304,10 @@ impl App for MyApp {
                                                 let error = format!("Errore nel caster: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
-                                                is_running.store(false,Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
-                                            }else {
-                                                is_running.store(false,Ordering::SeqCst);
                                             }
+                                                is_running.store(false,Ordering::SeqCst);
+
                                         });
                                         ctx.request_repaint();
                                     });

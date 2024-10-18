@@ -60,7 +60,7 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                         })
                         .collect();
 
-                    if win.is_open() && !win.is_key_down(minifb::Key::Escape) {
+                    if win.is_open()  {
                         win.update_with_buffer(&buffer, width, height).unwrap();
                     } else {
                         break;
