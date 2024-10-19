@@ -227,9 +227,9 @@ impl App for MyApp {
                                 self.status_message="Modalità selezionata: Caster".to_string();
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error(); // Pulisce l'errore quando si preme Avvia
-                                    // ... codice esistente ...
 
-                                    self.status_message = "Avviando il caster...".to_string();
+
+                                    self.status_message = "Trasmissione in corso...".to_string();
                                     self.caster_running.store(true,Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 

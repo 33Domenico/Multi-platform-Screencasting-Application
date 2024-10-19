@@ -202,6 +202,12 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
                 });
             }
         }
+
+        // Invia un segnale esplicito di chiusura ai receiver
+        if let Err(_) = tx_clone.send(vec![0, 0, 0, 0]) {
+            eprintln!("Errore nell'invio del segnale di terminazione.");
+        }
+
         println!("Listener TCP interrotto.");
     });
 

@@ -16,10 +16,11 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
     while !stop_signal.load(Ordering::SeqCst) {
         let mut size_buf = [0u8; 4];
 
-        // Usa il timeout per la lettura
         match timeout(read_timeout, stream.read_exact(&mut size_buf)).await {
-            Ok(Ok((_))) => {
+            Ok(Ok(_)) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
+
+
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
                 if frame_size > 10_000_000 {
@@ -72,29 +73,33 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
             }
             Ok(Err(e)) => {
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
+
+                let frame_size = u32::from_be_bytes(size_buf) as usize;
+                // Gestione del segnale di chiusura dal caster
+                if frame_size == 0 {
+                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Il caster ha chiuso la trasmissione."));
+                }
+
                 return Err(e);
             }
             Err(_) => {
-                // Il timeout è scaduto, nessun frame ricevuto
                 println!("Timeout scaduto, nessun frame ricevuto. Mantengo la finestra attiva.");
 
                 if let Some(ref mut win) = window {
                     if win.is_open() {
-                        win.update();  // Mantieni la finestra aggiornata senza nuovi frame
+                        win.update();
                     } else {
                         break;
                     }
                 }
 
-                // Aggiungi un ritardo per evitare di consumare troppe risorse
                 sleep(Duration::from_millis(100)).await;
             }
         }
 
-        // Aggiorna la finestra per mantenerla reattiva
         if let Some(ref mut win) = window {
             if win.is_open() {
-                win.update();  // Continua ad aggiornare la finestra
+                win.update();
             } else {
                 break;
             }
