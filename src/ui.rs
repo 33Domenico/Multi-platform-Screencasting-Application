@@ -27,6 +27,15 @@ pub struct MyApp {
     screenshot: Option<egui::TextureHandle>,
     error_message: Arc<RwLock<Option<String>>>,
     is_error: Arc<AtomicBool>,
+    available_displays: Vec<DisplayInfo>,
+    selected_display_index: Option<usize>,
+}
+#[derive(Clone)]
+struct DisplayInfo {
+    name: String,
+    width: usize,
+    height: usize,
+    index: usize,
 }
 
 impl Default for MyApp {
@@ -44,13 +53,34 @@ impl Default for MyApp {
             screenshot: None,
             error_message: Arc::new(RwLock::new(None)),
             is_error: Arc::new(AtomicBool::new(false)),
+            available_displays: Vec::new(),
+            selected_display_index: None,
         }
     }
 }
 
 impl MyApp {
     pub fn new(_cc: &CreationContext<'_>) -> Self {
-        Default::default()
+        let mut app = Self::default();
+        app.refresh_displays();
+        app
+    }
+    fn refresh_displays(&mut self) {
+        self.available_displays.clear();
+        if let Ok(displays) = Display::all() {
+            for (index, display) in displays.iter().enumerate() {
+                self.available_displays.push(DisplayInfo {
+                    name: format!("Display {} ({}x{})", index + 1, display.width(), display.height()),
+                    width: display.width(),
+                    height: display.height(),
+                    index,
+                });
+            }
+        }
+        // Se c'è solo un display, selezionalo automaticamente
+        if self.available_displays.len() == 1 {
+            self.selected_display_index = Some(0);
+        }
     }
 
     fn display_error(&self, ui: &mut egui::Ui) {
@@ -100,20 +130,36 @@ impl MyApp {
 
 
     fn capture_screenshot(&mut self, ctx: &egui::Context) {
-        let display = match Display::primary() {
-            Ok(display) => display,
-            Err(e) => {
+        let display_index = match self.selected_display_index {
+            Some(index) => index,
+            None => {
+                self.set_error("Nessun display selezionato".to_string());
                 return;
             }
         };
 
-        let mut capturer = match scrap::Capturer::new(display) {
-            Ok(capturer) => capturer,
+        let displays = match Display::all() {
+            Ok(displays) => displays,
             Err(e) => {
-                eprintln!("Errore nella creazione del capturer: {}", e);
+                self.set_error(format!("Errore nell'accesso ai display: {}", e));
                 return;
             }
         };
+
+        if display_index >= displays.len() {
+            self.set_error("Indice del display non valido".to_string());
+            return;
+        }
+
+        let display = displays.into_iter().nth(display_index).unwrap();
+        let mut capturer = match Capturer::new(display) {
+            Ok(capturer) => capturer,
+            Err(e) => {
+                self.set_error(format!("Errore nella creazione del capturer: {}", e));
+                return;
+            }
+        };
+
 
         let width = capturer.width();
         let height = capturer.height();
@@ -155,7 +201,9 @@ impl MyApp {
 
 impl App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
-
+        if self.selected_display_index==None{
+            self.refresh_displays()
+        }
 
         if self.selecting_area {
             egui::CentralPanel::default()
@@ -218,6 +266,27 @@ impl App for MyApp {
                                 ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
+                            ui.horizontal(|ui| {
+                                ui.label("Seleziona Monitor:");
+                                egui::ComboBox::from_label("")
+                                    .selected_text(match self.selected_display_index {
+                                        Some(index) => &self.available_displays[index].name,
+                                        None => "Seleziona un monitor",
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        for (index, display) in self.available_displays.iter().enumerate() {
+                                            ui.selectable_value(
+                                                &mut self.selected_display_index,
+                                                Some(index),
+                                                &display.name,
+                                            );
+                                        }
+                                    });
+
+                                if ui.button("🔄").clicked() {
+                                    self.refresh_displays();
+                                }
+                            });
 
                             if !self.caster_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Caster".to_string();
@@ -237,9 +306,10 @@ impl App for MyApp {
                                     let error_message = self.error_message.clone();
                                     let is_error = self.is_error.clone();
                                     let is_running=self.caster_running.clone();
+                                    let selected_display_index= self.selected_display_index.unwrap();
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area).await {
+                                            if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area,selected_display_index).await {
                                                 let error = format!("Errore nel caster: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);

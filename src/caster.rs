@@ -82,8 +82,13 @@ fn crop_frame_to_area(
     cropped_frame
 }
 
-async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>, hotkey_state: Arc<HotkeyState>) -> Result<(), Box<dyn Error>> {
-    let display = Display::primary()?;
+async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>, hotkey_state: Arc<HotkeyState>,display_index: usize) -> Result<(), Box<dyn Error>> {
+    let displays = Display::all()?;
+    if display_index >= displays.len() {
+        return Err("Indice del display non valido".into());
+    }
+
+    let display = displays.into_iter().nth(display_index).unwrap();
     let mut capturer = Capturer::new(display)?;
     while !stop_signal.load(Ordering::SeqCst) && !hotkey_state.terminate.load(Ordering::SeqCst) {
         if hotkey_state.paused.load(Ordering::SeqCst) {
@@ -148,7 +153,7 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
     Ok(())
 }
 
-pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>) -> Result<(), Box<dyn Error>> {
+pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(addr).await?;
     let (tx, _rx) = broadcast::channel::<Vec<u8>>(10);
     let tx = Arc::new(tx);
@@ -211,7 +216,7 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
         println!("Listener TCP interrotto.");
     });
 
-    capture_screen(&*Arc::clone(&tx), stop_signal, selected_area, Arc::clone(&hotkey_state)).await?;
+    capture_screen(&*Arc::clone(&tx), stop_signal, selected_area, Arc::clone(&hotkey_state),display_index).await?;
     println!("Caster completamente fermato.");
     Ok(())
 }

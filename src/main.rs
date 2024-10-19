@@ -33,7 +33,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 eframe::egui::pos2(400.0, 300.0)   // Massimo (x1, y1)
             ));
 
-            caster::start_caster(addr, stop_signal, selected_area).await?;
         }
         "receiver" => {
             let addr = "127.0.0.1:12345";
