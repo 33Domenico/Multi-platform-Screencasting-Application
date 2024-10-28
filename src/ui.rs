@@ -485,7 +485,7 @@ impl App for MyApp {
                                 if ui.button("Avvia").clicked()   {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
-                                    self.status_message = "Connettendo al caster...".to_string();
+                                    self.status_message = "Ricezione trasmissione in corso...".to_string();
                                     self.receiver_running.store(true,Ordering::SeqCst) ;
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
