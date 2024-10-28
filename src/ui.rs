@@ -469,9 +469,10 @@ impl App for MyApp {
                                     self.caster_running.store(false,Ordering::SeqCst);
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
-
-                                ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
-                                    .color(egui::Color32::BLACK));
+                                ui.label(format!(
+                                    "\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n"));
+                                //ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
+                                //    .color(egui::Color32::BLACK));
                             }
                         }
                         Modality::Receiver => {
