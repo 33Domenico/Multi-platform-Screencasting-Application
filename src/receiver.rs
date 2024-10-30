@@ -5,6 +5,7 @@ use image::ImageReader;
 use minifb::{Window, WindowOptions};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::time::{sleep, Duration, timeout};
+use tokio::task;
 
 pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
@@ -19,7 +20,6 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
         match timeout(read_timeout, stream.read_exact(&mut size_buf)).await {
             Ok(Ok(_)) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
-
 
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
@@ -43,12 +43,16 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                 if window.is_none() {
                     width = w as usize;
                     height = h as usize;
-                    window = Some(Window::new(
-                        "Ricezione Frame",
-                        width,
-                        height,
-                        WindowOptions::default(),
-                    ).expect("Impossibile creare la finestra!"));
+
+                    // Usa block_in_place per aprire la finestra sul thread principale
+                    window = Some(task::block_in_place(|| {
+                        Window::new(
+                            "Ricezione Frame",
+                            width,
+                            height,
+                            WindowOptions::default(),
+                        ).expect("Impossibile creare la finestra!")
+                    }));
                 }
 
                 if let Some(ref mut win) = window {
