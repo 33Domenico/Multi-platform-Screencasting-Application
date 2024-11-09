@@ -7,7 +7,7 @@ use image::{ImageBuffer, Rgba};
 use scrap::{Capturer, Display};
 use std::time::Duration;
 use std::thread;
-use crate::receiver::SharedFrame;
+use crate::receiver::{ReceiverState, SharedFrame};
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -33,6 +33,7 @@ pub struct MyApp {
     start_pos_relative: Option<Pos2>,  // Per salvare la posizione di inizio relativa all'immagine
     shared_frame: Arc<Mutex<SharedFrame>>,
     stream_texture: Option<egui::TextureHandle>,
+    receiver_state: Arc<Mutex<ReceiverState>>, // Add this field
 }
 #[derive(Clone)]
 struct DisplayInfo {
@@ -62,7 +63,7 @@ impl Default for MyApp {
             start_pos_relative: None,
             shared_frame: Arc::new(Mutex::new(SharedFrame::default())),
             stream_texture: None,
-
+            receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
         }
     }
 }
@@ -486,11 +487,13 @@ impl App for MyApp {
                                 ui.text_edit_singleline(&mut self.caster_address);
                             });
 
+
                             if !self.receiver_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Receiver".to_string();
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
+                                    let receiver_state = Arc::clone(&self.receiver_state);
                                     self.status_message = "Connettendo al caster...".to_string();
                                     self.receiver_running.store(true, Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
@@ -504,7 +507,7 @@ impl App for MyApp {
 
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame).await {
+                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame,receiver_state).await {
                                                 let error = format!("Errore nel receiver: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
@@ -516,6 +519,24 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
+                                ui.horizontal(|ui| {
+                                    if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).lock() {
+
+                                        if receiver_state.recording {
+                                            if ui.button("⏹ Arresta Registrazione").clicked() {
+                                                println!("Interruzione registrazione...");
+                                                receiver_state.stop_recording().unwrap();
+                                            }
+                                        } else {
+                                            if ui.button("⏺ Avvia Registrazione").clicked() {
+                                                println!("Avvio registrazione...");
+                                                receiver_state.start_recording().unwrap(); // Use real dimensions
+                                            }
+                                        }
+                                    }
+                                });
+
+
                                 if let Ok(mut shared) = self.shared_frame.lock() {
                                     if shared.new_frame {
                                         let color_image = egui::ColorImage::from_rgba_unmultiplied(
