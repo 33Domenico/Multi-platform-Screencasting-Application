@@ -107,7 +107,6 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
                     let start_y = area.min.y as usize;
                     let end_x = area.max.x as usize;
                     let end_y = area.max.y as usize;
-
                     let mut cropped_frame = Vec::new();
                     for y in start_y..end_y {
                         let start_index = y * width * 4 + start_x * 4;

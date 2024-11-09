@@ -1,12 +1,13 @@
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock,Mutex};
 use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget};
 use tokio::runtime::Runtime;
 use image::{ImageBuffer, Rgba};
 use scrap::{Capturer, Display};
 use std::time::Duration;
 use std::thread;
+use crate::receiver::SharedFrame;
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -30,6 +31,8 @@ pub struct MyApp {
     available_displays: Vec<DisplayInfo>,
     selected_display_index: Option<usize>,
     start_pos_relative: Option<Pos2>,  // Per salvare la posizione di inizio relativa all'immagine
+    shared_frame: Arc<Mutex<SharedFrame>>,
+    stream_texture: Option<egui::TextureHandle>,
 }
 #[derive(Clone)]
 struct DisplayInfo {
@@ -57,6 +60,9 @@ impl Default for MyApp {
             available_displays: Vec::new(),
             selected_display_index: None,
             start_pos_relative: None,
+            shared_frame: Arc::new(Mutex::new(SharedFrame::default())),
+            stream_texture: None,
+
         }
     }
 }
@@ -469,10 +475,9 @@ impl App for MyApp {
                                     self.caster_running.store(false,Ordering::SeqCst);
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
-                                ui.label(format!(
-                                    "\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n"));
-                                //ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
-                                //    .color(egui::Color32::BLACK));
+
+                                ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
+                                    .color(egui::Color32::BLACK));
                             }
                         }
                         Modality::Receiver => {
@@ -483,38 +488,84 @@ impl App for MyApp {
 
                             if !self.receiver_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Receiver".to_string();
-                                if ui.button("Avvia").clicked()   {
+                                if ui.button("Avvia").clicked() {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
-                                    self.status_message = "Ricezione trasmissione in corso...".to_string();
-                                    self.receiver_running.store(true,Ordering::SeqCst) ;
+                                    self.status_message = "Connettendo al caster...".to_string();
+                                    self.receiver_running.store(true, Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
                                     let stop_signal = self.stop_signal.clone();
                                     let ctx = ctx.clone();
                                     let error_message = self.error_message.clone();
                                     let is_error = self.is_error.clone();
-                                    let is_running=self.receiver_running.clone();
+                                    let is_running = self.receiver_running.clone();
+                                    let shared_frame = self.shared_frame.clone();
+
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal).await {
-                                                let error = format!("Errore nel caster: {}", e);
+                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame).await {
+                                                let error = format!("Errore nel receiver: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
                                             }
-                                                is_running.store(false,Ordering::SeqCst);
-
+                                            is_running.store(false, Ordering::SeqCst);
                                         });
                                         ctx.request_repaint();
                                     });
                                 }
                             } else {
+                                if let Ok(mut shared) = self.shared_frame.lock() {
+                                    if shared.new_frame {
+                                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                                            [shared.width, shared.height],
+                                            &shared.buffer,
+                                        );
+
+                                        self.stream_texture = Some(ctx.load_texture(
+                                            "stream",
+                                            color_image,
+                                            egui::TextureOptions::LINEAR,
+                                        ));
+                                        shared.new_frame = false;
+                                    }
+                                }
+
+                                // Mostra il frame
                                 if ui.button("Stop").clicked() {
                                     self.status_message = "Interrompendo il receiver...".to_string();
                                     self.stop_signal.store(true, Ordering::SeqCst);
                                     self.receiver_running.store(false,Ordering::SeqCst);
                                 }
+                                // Mostra il frame adattandolo alla finestra
+                                if let Some(texture) = &self.stream_texture {
+                                    // Ottieni le dimensioni disponibili nell'UI
+                                    let available_size = ui.available_size();
+
+                                    // Ottieni le dimensioni originali della texture
+                                    let texture_size = texture.size_vec2();
+
+                                    // Calcola il rapporto di aspetto della texture e dello spazio disponibile
+                                    let texture_aspect = texture_size.x / texture_size.y;
+                                    let available_aspect = available_size.x / available_size.y;
+
+                                    // Calcola le dimensioni finali mantenendo il rapporto di aspetto
+                                    let display_size = if texture_aspect > available_aspect {
+                                        // La texture è più larga rispetto allo spazio disponibile
+                                        egui::vec2(available_size.x, available_size.x / texture_aspect)
+                                    } else {
+                                        // La texture è più alta rispetto allo spazio disponibile
+                                        egui::vec2(available_size.y * texture_aspect, available_size.y)
+                                    };
+                                    let image = Image::from_texture(texture)
+                                        .fit_to_exact_size(display_size);
+                                    // Crea e mostra l'immagine ridimensionata
+                                    image.ui(ui);
+                                }
+                                ctx.request_repaint();
+
+
                             }
                         }
                     }

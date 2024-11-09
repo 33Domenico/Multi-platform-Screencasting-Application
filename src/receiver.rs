@@ -3,16 +3,35 @@ use std::io;
 use tokio::io::AsyncReadExt;
 use image::ImageReader;
 use minifb::{Window, WindowOptions};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
 use tokio::time::{sleep, Duration, timeout};
-use tokio::task;
 
-pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Result<()> {
+// Struttura per condividere il frame tra i thread
+pub struct SharedFrame {
+    pub buffer: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+    pub new_frame: bool,
+}
+
+impl Default for SharedFrame {
+    fn default() -> Self {
+        Self {
+            buffer: Vec::new(),
+            width: 0,
+            height: 0,
+            new_frame: false,
+        }
+    }
+}
+
+pub async fn receive_frame(
+    addr: &str,
+    stop_signal: Arc<AtomicBool>,
+    shared_frame: Arc<Mutex<SharedFrame>>,
+) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
-    let mut window: Option<Window> = None;
-    let mut width: usize = 0;
-    let mut height: usize = 0;
-    let read_timeout = Duration::from_secs(2);  // Timeout di 2 secondi per leggere i dati
+    let read_timeout = Duration::from_secs(2);
 
     while !stop_signal.load(Ordering::SeqCst) {
         let mut size_buf = [0u8; 4];
@@ -38,48 +57,20 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Errore durante la decodifica dell'immagine: {}", e)))?;
 
                 let img = img.to_rgba8();
-                let (w, h) = img.dimensions();
+                let (width, height) = img.dimensions();
 
-                if window.is_none() {
-                    width = w as usize;
-                    height = h as usize;
-
-                    // Usa block_in_place per aprire la finestra sul thread principale
-                    window = Some(task::block_in_place(|| {
-                        Window::new(
-                            "Ricezione Frame",
-                            width,
-                            height,
-                            WindowOptions::default(),
-                        ).expect("Impossibile creare la finestra!")
-                    }));
-                }
-
-                if let Some(ref mut win) = window {
-                    let buffer: Vec<u32> = img
-                        .pixels()
-                        .map(|p| {
-                            let rgba = p.0;
-                            let r = rgba[0] as u32;
-                            let g = rgba[1] as u32;
-                            let b = rgba[2] as u32;
-                            let a = rgba[3] as u32;
-                            (r << 16) | (g << 8) | b | (a << 24)
-                        })
-                        .collect();
-
-                    if win.is_open() {
-                        win.update_with_buffer(&buffer, width, height).unwrap();
-                    } else {
-                        break;
-                    }
+                // Aggiorna il frame condiviso
+                if let Ok(mut shared) = shared_frame.lock() {
+                    shared.buffer = img.into_raw();
+                    shared.width = width as usize;
+                    shared.height = height as usize;
+                    shared.new_frame = true;
                 }
             }
             Ok(Err(e)) => {
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
 
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
-                // Gestione del segnale di chiusura dal caster
                 if frame_size == 0 {
                     return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Il caster ha chiuso la trasmissione."));
                 }
@@ -87,25 +78,8 @@ pub async fn receive_frame(addr: &str, stop_signal: Arc<AtomicBool>) -> io::Resu
                 return Err(e);
             }
             Err(_) => {
-                println!("Timeout scaduto, nessun frame ricevuto. Mantengo la finestra attiva.");
-
-                if let Some(ref mut win) = window {
-                    if win.is_open() {
-                        win.update();
-                    } else {
-                        break;
-                    }
-                }
-
+                println!("Timeout scaduto, nessun frame ricevuto.");
                 sleep(Duration::from_millis(100)).await;
-            }
-        }
-
-        if let Some(ref mut win) = window {
-            if win.is_open() {
-                win.update();
-            } else {
-                break;
             }
         }
     }

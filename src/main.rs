@@ -22,24 +22,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     match args[1].as_str() {
-        "caster" => {
-            let addr = "127.0.0.1:12345";
-            println!("Avviando il caster...");
-            let stop_signal = Arc::new(AtomicBool::new(false));
-
-            // Definizione di un'area selezionata simulata
-            let selected_area = Some(Rect::from_min_max(
-                eframe::egui::pos2(100.0, 100.0),  // Minimo (x0, y0)
-                eframe::egui::pos2(400.0, 300.0)   // Massimo (x1, y1)
-            ));
-
-        }
-        "receiver" => {
-            let addr = "127.0.0.1:12345";
-            println!("Avviando il receiver...");
-            let stop_signal = Arc::new(AtomicBool::new(false));
-            receiver::receive_frame(addr, stop_signal).await?;
-        }
         "ui" => {
 
             let options = eframe::NativeOptions::default();
