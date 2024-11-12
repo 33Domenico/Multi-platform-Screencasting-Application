@@ -72,28 +72,29 @@ impl ReceiverState {
         Ok(())
     }
 
-    fn convert_to_video(&self) -> io::Result<()> {
-        use std::process::Command;
+    pub fn convert_to_video(&self) -> io::Result<()> {
+        // Nome del file di output video raw
+        let video_path = Path::new(&self.output_dir).join("output_video.raw");
+        let mut video_file = fs::File::create(&video_path)?;
 
-        let status = Command::new("ffmpeg")
-            .args(&[
-                "-framerate", "30",
-                "-i", &format!("{}/frame_%06d.png", self.output_dir),
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                &format!("{}/output.mp4", self.output_dir)
-            ])
-            .status()?;
+        // Scrivi i frame uno per uno nel file raw
+        for frame_number in 0..self.frame_count {
+            let frame_path = Path::new(&self.output_dir)
+                .join(format!("frame_{:06}.png", frame_number));
 
-        if status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Errore durante la conversione del video"
-            ))
+            // Leggi ogni frame come immagine
+            let img = image::open(&frame_path)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Errore durante l'apertura del frame: {}", e)))?;
+
+            // Ottieni i dati raw del frame
+            let img_data = img.to_rgb8().into_raw();
+            video_file.write_all(&img_data)?;
         }
+
+        println!("Video raw creato con successo in: {}", video_path.display());
+        Ok(())
     }
+
 
 }
 // Struttura per condividere il frame tra i thread
