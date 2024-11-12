@@ -443,7 +443,7 @@ impl App for MyApp {
 
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error();
-                                    self.status_message = "Trasmissione in corso...".to_string();
+
                                     self.caster_running.store(true,Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
@@ -477,8 +477,7 @@ impl App for MyApp {
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
 
-                                ui.label(egui::RichText::new("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n")
-                                    .color(egui::Color32::BLACK));
+                                ui.label("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
                             }
                         }
                         Modality::Receiver => {
@@ -494,7 +493,6 @@ impl App for MyApp {
                                     self.clear_error();
                                     let addr = self.caster_address.clone();
                                     let receiver_state = Arc::clone(&self.receiver_state);
-                                    self.status_message = "Connettendo al caster...".to_string();
                                     self.receiver_running.store(true, Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
