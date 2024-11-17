@@ -1,19 +1,24 @@
 use tokio::net::TcpStream;
 use tokio::io::AsyncReadExt;
 use image::ImageReader;
-use minifb::{Window, WindowOptions};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
 use tokio::time::{sleep, Duration, timeout};
-use tokio::task;
 use std::fs;
 use std::path::Path;
 use chrono::Local;
 use std::io::{self, Write};
+use image::RgbaImage;
+use std::process::Command;
+use std::time::{ Instant};
 
 pub struct ReceiverState {
     pub recording: bool,
-    frame_count: u32,
-    output_dir: String,
+    pub(crate) frame_count: u32,
+    pub(crate) output_dir: String,
+    current_video_path: Option<String>,
+    frame_width: Option<u32>,
+    frame_height: Option<u32>,
+    last_frame_time: Option<Instant>,
 }
 
 impl ReceiverState {
@@ -22,80 +27,167 @@ impl ReceiverState {
             recording: false,
             frame_count: 0,
             output_dir: String::new(),
+            current_video_path: None,
+            frame_width: None,
+            frame_height: None,
+            last_frame_time: None,
         }
+    }
+    fn reset_parameter(&mut self){
+        self.recording = false;
+        self.frame_count = 0;
+        self.frame_width = None;
+        self.frame_height = None;
+        self.last_frame_time = None;
     }
 
     pub fn start_recording(&mut self) -> io::Result<()> {
+        if self.recording {
+            return Ok(());
+        }
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
         self.output_dir = format!("recording_{}", timestamp);
         fs::create_dir_all(&self.output_dir)?;
+        let frames_dir = Path::new(&self.output_dir).join("frames");
+        fs::create_dir_all(&frames_dir)?;
+
         self.recording = true;
         self.frame_count = 0;
-        println!("Iniziata registrazione in: {}", self.output_dir);
+        self.last_frame_time = Some(Instant::now());
+        println!("Started recording in: {}", self.output_dir);
         Ok(())
     }
 
-    pub fn save_frame(&mut self, img: &image::RgbaImage) -> io::Result<()> {
-        if self.recording {
-            let frame_path = Path::new(&self.output_dir)
-                .join(format!("frame_{:06}.png", self.frame_count));
-            img.save(&frame_path)
-                .map_err(|e| io::Error::new(std::io::ErrorKind::Other, e))?;
-            self.frame_count += 1;
+    pub fn save_frame(&mut self, img: &RgbaImage) -> io::Result<()> {
+        if !self.recording {
+            return Ok(());
         }
+
+        // Validate frame dimensions
+        let (width, height) = img.dimensions();
+        if width < 10 || height < 10 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Frame dimensions too small (minimum 10x10 pixels required)",
+            ));
+        }
+
+
+        // Store frame dimensions on first frame
+        if self.frame_width.is_none() {
+            self.frame_width = Some(width);
+            self.frame_height = Some(height);
+        }
+
+        // Ensure consistent frame dimensions
+        if Some(width) != self.frame_width || Some(height) != self.frame_height {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Frame dimensions changed during recording",
+            ));
+        }
+
+        // Save frame as PNG
+        let frame_path = Path::new(&self.output_dir)
+            .join("frames")
+            .join(format!("frame_{:06}.png", self.frame_count));
+
+        img.save(&frame_path)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        self.frame_count += 1;
+        self.last_frame_time = Some(Instant::now());
         Ok(())
     }
 
     pub fn stop_recording(&mut self) -> io::Result<()> {
-        if self.recording {
-            println!("Registrazione fermata. Frames salvati: {}", self.frame_count);
-            let metadata = format!(
-                "frames: {}\nfps: 30\nstart_time: {}\n",
-                self.frame_count,
-                Local::now().to_rfc3339()
-            );
-            fs::write(
-                Path::new(&self.output_dir).join("metadata.txt"),
-                metadata
-            )?;
+        if !self.recording {
+            return Ok(());
+        }
+        println!("Stopping recording. Frames saved: {}", self.frame_count);
 
-            // Converti in video se ffmpeg è disponibile
-            if let Ok(()) = self.convert_to_video() {
-                println!("Video creato con successo!");
-            } else {
-                println!("Non è stato possibile creare il video. I frame sono stati salvati in: {}", self.output_dir);
+        if self.frame_count == 0 {
+            self.reset_parameter();
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "No frames were recorded",
+            ));
+        }
+
+        // Save metadata
+        let metadata = format!(
+            "frames: {}\nfps: 30\nwidth: {}\nheight: {}\nstart_time: {}\n",
+            self.frame_count,
+            self.frame_width.unwrap_or(0),
+            self.frame_height.unwrap_or(0),
+            Local::now().to_rfc3339()
+        );
+        fs::write(Path::new(&self.output_dir).join("metadata.txt"), metadata)?;
+        // Convert to video
+        match self.convert_to_mp4() {
+            Ok(_) => {}
+            Err(e) => {
+                self.reset_parameter();
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    e.to_string(),
+                ));
             }
-
-            self.recording = false;
-            self.frame_count = 0;
         }
+         self.reset_parameter();
         Ok(())
     }
 
-    pub fn convert_to_video(&self) -> io::Result<()> {
-        // Nome del file di output video raw
-        let video_path = Path::new(&self.output_dir).join("output_video.raw");
-        let mut video_file = fs::File::create(&video_path)?;
-
-        // Scrivi i frame uno per uno nel file raw
-        for frame_number in 0..self.frame_count {
-            let frame_path = Path::new(&self.output_dir)
-                .join(format!("frame_{:06}.png", frame_number));
-
-            // Leggi ogni frame come immagine
-            let img = image::open(&frame_path)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Errore durante l'apertura del frame: {}", e)))?;
-
-            // Ottieni i dati raw del frame
-            let img_data = img.to_rgb8().into_raw();
-            video_file.write_all(&img_data)?;
+    fn convert_to_mp4(&mut self) -> io::Result<()> {
+        // Check if ffmpeg is available
+        if !Command::new("ffmpeg").arg("-version").output().is_ok() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "ffmpeg not found. Please install ffmpeg to enable video conversion.",
+            ));
         }
 
-        println!("Video raw creato con successo in: {}", video_path.display());
+        let output_path = Path::new(&self.output_dir)
+            .join("output.mp4")
+            .to_string_lossy()
+            .to_string();
+
+        let frames_pattern = Path::new(&self.output_dir)
+            .join("frames")
+            .join("frame_%06d.png")
+            .to_string_lossy()
+            .to_string();
+
+        // Build ffmpeg command with scale filter to ensure even dimensions
+        let output = Command::new("ffmpeg")
+            .args([
+                "-framerate", "30",  // Input framerate
+                "-i", &frames_pattern,
+                // Scale width and height to even numbers while maintaining aspect ratio
+                "-vf", "scale=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-preset", "medium",
+                "-crf", "23",
+                "-r", "30",
+                "-y",
+                &output_path
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to convert video: {}", error),
+            ));
+        }
+
+        self.current_video_path = Some(output_path.clone());
+        println!("Video successfully created at: {}", output_path);
+
         Ok(())
     }
-
-
 }
 // Struttura per condividere il frame tra i thread
 pub struct SharedFrame {

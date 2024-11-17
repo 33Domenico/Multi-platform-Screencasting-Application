@@ -74,6 +74,9 @@ impl MyApp {
         app.refresh_displays();
         app
     }
+    fn handle_recording_error(&self, error: String) {
+        self.set_error(format!("Errore di registrazione: {}", error));
+    }
     fn refresh_displays(&mut self) {
         self.available_displays.clear();
         if let Ok(displays) = Display::all() {
@@ -291,6 +294,7 @@ impl MyApp {
 }
 
 impl App for MyApp {
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         if self.selected_display_index==None{
             self.refresh_displays()
@@ -521,14 +525,47 @@ impl App for MyApp {
                                     if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).lock() {
 
                                         if receiver_state.recording {
-                                            if ui.button("⏹ Arresta Registrazione").clicked() {
-                                                println!("Interruzione registrazione...");
-                                                receiver_state.stop_recording().unwrap();
+                                            if ui.add(egui::Button::new("⏹ Arresta Registrazione")
+                                                .fill(Color32::from_rgb(255, 50, 50)))
+                                                .clicked()
+                                            {
+                                                match receiver_state.stop_recording() {
+                                                    Ok(_) => {
+                                                        self.status_message = "Registrazione completata con successo.".to_string();
+                                                        self.clear_error();
+                                                    },
+                                                    Err(e) => {
+                                                        self.handle_recording_error(e.to_string());
+                                                    }
+                                                }
                                             }
+                                            // Mostra stato registrazione
+                                            ui.label(format!("Frame registrati: {}", receiver_state.frame_count));
                                         } else {
-                                            if ui.button("⏺ Avvia Registrazione").clicked() {
-                                                println!("Avvio registrazione...");
-                                                receiver_state.start_recording().unwrap(); // Use real dimensions
+                                            if ui.add(egui::Button::new("⏺ Avvia Registrazione")
+                                                .fill(Color32::from_rgb(50, 255, 50)))
+                                                .clicked()
+                                            {
+                                                match std::process::Command::new("ffmpeg").arg("-version").output() {
+                                                    Ok(_) => {
+                                                        match receiver_state.start_recording() {
+                                                            Ok(_) => {
+                                                                self.status_message = "Registrazione avviata.".to_string();
+                                                                self.clear_error();
+                                                            },
+                                                            Err(e) => {
+                                                                self.handle_recording_error(e.to_string());
+                                                            }
+                                                        }
+                                                    },
+                                                    Err(_) => {
+                                                        self.handle_recording_error(
+                                                            "FFmpeg non trovato. Installare FFmpeg per abilitare la registrazione video."
+                                                                .to_string()
+                                                        );
+                                                    }
+                                                }
+
                                             }
                                         }
                                     }
@@ -548,6 +585,20 @@ impl App for MyApp {
                                             egui::TextureOptions::LINEAR,
                                         ));
                                         shared.new_frame = false;
+                                    }
+                                }
+
+                                // Mostra un indicatore di registrazione quando è attiva
+                                if let Ok(receiver_state) = self.receiver_state.lock() {
+                                    if receiver_state.recording {
+                                        ui.horizontal(|ui| {
+                                            ui.label(egui::RichText::new("⚫ REC")
+                                                .color(Color32::from_rgb(255, 0, 0))
+                                                .strong());
+
+                                            // Mostra il path di output
+                                            ui.label(format!("Salvando in: {}", receiver_state.output_dir));
+                                        });
                                     }
                                 }
 

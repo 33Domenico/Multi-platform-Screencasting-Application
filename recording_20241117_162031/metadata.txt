@@ -1,0 +1,5 @@
+frames: 56
+fps: 30
+width: 617
+height: 851
+start_time: 2024-11-17T16:20:46.421657300+01:00
