@@ -145,7 +145,7 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
                 eprintln!("Errore nella cattura del frame: {:?}", e);
             }
         }
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(10)).await;
     }
 
     println!("Cattura dello schermo interrotta.");

@@ -1,5 +1,0 @@
-frames: 148
-fps: 30
-width: 976
-height: 709
-start_time: 2024-12-05T17:00:40.789507600+01:00
