@@ -20,6 +20,8 @@ pub struct ReceiverState {
     frame_height: Option<u32>,
     last_frame_time: Option<Instant>,
     start_time: Option<Instant>,
+    paused_duration: Duration,
+    pause_start_time: Option<Instant>,
     pub framerate: f64,
 }
 
@@ -34,6 +36,8 @@ impl ReceiverState {
             frame_height: None,
             last_frame_time: None,
             start_time: None,
+            paused_duration: Duration::new(0, 0),
+            pause_start_time: None,
             framerate: 30.0
         }
     }
@@ -43,6 +47,8 @@ impl ReceiverState {
         self.frame_width = None;
         self.frame_height = None;
         self.last_frame_time = None;
+        self.paused_duration = Duration::new(0, 0);
+        self.pause_start_time=None;
     }
 
     pub fn start_recording(&mut self) -> io::Result<()> {
@@ -59,6 +65,7 @@ impl ReceiverState {
         self.frame_count = 0;
         self.start_time = Some(Instant::now());
         self.last_frame_time = Some(Instant::now());
+        self.paused_duration = Duration::new(0, 0);
         println!("Started recording in: {}", self.output_dir);
         Ok(())
     }
@@ -128,7 +135,7 @@ impl ReceiverState {
         }
 
         // Calcola il framerate effettivo
-        let duration = self.last_frame_time.unwrap().duration_since(self.start_time.unwrap());
+        let duration = self.last_frame_time.unwrap().duration_since(self.start_time.unwrap())- self.paused_duration;
         self.framerate = self.frame_count as f64 / duration.as_secs_f64();
         println!("Framerate effettivo: {:.2} fps", self.framerate );
 
@@ -240,13 +247,14 @@ pub async fn receive_frame(
 ) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
     let read_timeout = Duration::from_secs(2);
+    let mut no_frame_received = false;
+
     while !stop_signal.load(Ordering::SeqCst) {
         let mut size_buf = [0u8; 4];
 
         match timeout(read_timeout, stream.read_exact(&mut size_buf)).await {
             Ok(Ok(_)) => {
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
-
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
                 if frame_size > 10_000_000 {
@@ -299,9 +307,29 @@ pub async fn receive_frame(
 
             Err(_) => {
                 println!("Timeout scaduto, nessun frame ricevuto.");
+                if !no_frame_received {
+                    if let Ok(mut receiver_state) = receiver_state.lock() {
+                        if receiver_state.pause_start_time.is_none() {
+                            receiver_state.pause_start_time = Some(Instant::now());
+                        }
+                    }
+                    no_frame_received = true;
+                }
                 sleep(Duration::from_millis(100)).await;
             }
         }
+        if no_frame_received {
+            if let Ok(mut receiver_state) = receiver_state.lock() {
+            if let Some(pause_start_time) = receiver_state.pause_start_time {
+            receiver_state.paused_duration += pause_start_time.elapsed();
+            receiver_state.pause_start_time = None;
+                }
+                println!("{:?}",receiver_state.paused_duration);
+                no_frame_received = false;
+
+            }
+        }
+
     }
 
     // Se il receiver viene fermato manualmente, salva la registrazione se attiva
