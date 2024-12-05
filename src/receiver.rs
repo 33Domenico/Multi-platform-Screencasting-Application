@@ -19,6 +19,8 @@ pub struct ReceiverState {
     frame_width: Option<u32>,
     frame_height: Option<u32>,
     last_frame_time: Option<Instant>,
+    start_time: Option<Instant>,
+    pub framerate: f64,
 }
 
 impl ReceiverState {
@@ -31,6 +33,8 @@ impl ReceiverState {
             frame_width: None,
             frame_height: None,
             last_frame_time: None,
+            start_time: None,
+            framerate: 30.0
         }
     }
     fn reset_parameter(&mut self){
@@ -53,6 +57,7 @@ impl ReceiverState {
 
         self.recording = true;
         self.frame_count = 0;
+        self.start_time = Some(Instant::now());
         self.last_frame_time = Some(Instant::now());
         println!("Started recording in: {}", self.output_dir);
         Ok(())
@@ -114,14 +119,22 @@ impl ReceiverState {
             ));
         }
 
+        // Calcola il framerate effettivo
+        let duration = self.last_frame_time.unwrap().duration_since(self.start_time.unwrap());
+        self.framerate = self.frame_count as f64 / duration.as_secs_f64();
+        println!("Framerate effettivo: {:.2} fps", self.framerate );
+
+
         // Save metadata
         let metadata = format!(
-            "frames: {}\nfps: 30\nwidth: {}\nheight: {}\nstart_time: {}\n",
+            "frames: {}\nfps: {:.2}\nwidth: {}\nheight: {}\nstart_time: {}\n",
             self.frame_count,
+            self.framerate,
             self.frame_width.unwrap_or(0),
             self.frame_height.unwrap_or(0),
             Local::now().to_rfc3339()
         );
+
         fs::write(Path::new(&self.output_dir).join("metadata.txt"), metadata)?;
         // Convert to video
         match self.convert_to_mp4() {
@@ -161,7 +174,7 @@ impl ReceiverState {
         // Build ffmpeg command with scale filter to ensure even dimensions
         let output = Command::new("ffmpeg")
             .args([
-                "-framerate", "30",  // Input framerate
+                "-framerate", &format!("{:.2}", self.framerate ),  // Input framerate
                 "-i", &frames_pattern,
                 // Scale width and height to even numbers while maintaining aspect ratio
                 "-vf", "scale=ceil(iw/2)*2:ceil(ih/2)*2",
@@ -169,7 +182,7 @@ impl ReceiverState {
                 "-pix_fmt", "yuv420p",
                 "-preset", "medium",
                 "-crf", "23",
-                "-r", "30",
+                "-r", &format!("{:.2}", self.framerate ),
                 "-y",
                 &output_path
             ])
