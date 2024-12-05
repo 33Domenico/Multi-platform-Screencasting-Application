@@ -105,6 +105,14 @@ impl ReceiverState {
         Ok(())
     }
 
+    fn delete_frames(&self) -> io::Result<()> {
+        let frames_dir = Path::new(&self.output_dir).join("frames");
+        if frames_dir.exists() {
+            fs::remove_dir_all(frames_dir)?;
+            println!("Frames deleted successfully.");
+        }
+        Ok(())
+    }
     pub fn stop_recording(&mut self) -> io::Result<()> {
         if !self.recording {
             return Ok(());
@@ -138,7 +146,10 @@ impl ReceiverState {
         fs::write(Path::new(&self.output_dir).join("metadata.txt"), metadata)?;
         // Convert to video
         match self.convert_to_mp4() {
-            Ok(_) => {}
+            Ok(_) => {
+                // Elimina tutti i frame una volta convertiti
+                self.delete_frames()?;
+            }
             Err(e) => {
                 self.reset_parameter();
                 return Err(io::Error::new(
@@ -147,7 +158,7 @@ impl ReceiverState {
                 ));
             }
         }
-         self.reset_parameter();
+        self.reset_parameter();
         Ok(())
     }
 
@@ -274,6 +285,12 @@ pub async fn receive_frame(
 
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 if frame_size == 0 {
+                    // Caster ha chiuso la trasmissione
+                    if let Ok(mut receiver_state) = receiver_state.lock() {
+                        if receiver_state.recording {
+                            receiver_state.stop_recording()?;
+                        }
+                    }
                     return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Il caster ha chiuso la trasmissione."));
                 }
 
@@ -284,6 +301,13 @@ pub async fn receive_frame(
                 println!("Timeout scaduto, nessun frame ricevuto.");
                 sleep(Duration::from_millis(100)).await;
             }
+        }
+    }
+
+    // Se il receiver viene fermato manualmente, salva la registrazione se attiva
+    if let Ok(mut receiver_state) = receiver_state.lock() {
+        if receiver_state.recording {
+            receiver_state.stop_recording()?;
         }
     }
 
