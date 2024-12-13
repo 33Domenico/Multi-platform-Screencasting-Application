@@ -186,8 +186,6 @@ impl MyApp {
                 }
             }
         }
-
-
         else {
             ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
         }
@@ -282,15 +280,23 @@ impl MyApp {
                 }
                 x_offset += d.width() as i32;
             }
-
-
-
         }
 
         // Imposta la modalità fullscreen
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
     }
+    fn save_original_window_state(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true)); // Rimuovi i bordi
+        ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
+    }
 
+
+    fn set_fullscreen_transparent(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false)); // Rimuovi i bordi
+        ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
+    }
 }
 
 impl App for MyApp {
@@ -367,6 +373,37 @@ impl App for MyApp {
                     // Gestisci la selezione con il rettangolo dell'immagine
                     self.handle_selection(ctx, image_rect);
                 });
+        }  else if self.caster_running.load(Ordering::SeqCst) { //se il casting è avviato rendo la finestra trasparente
+
+            self.set_fullscreen_transparent(ctx);
+            egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
+                self.display_error(ui);
+                ui.label("Casting in corso...");
+            });
+
+
+
+            ctx.set_visuals(egui::Visuals {
+                window_fill: egui::Color32::from_rgb(0, 0, 0), // Imposta il colore di sfondo della finestra a trasparente
+                ..Default::default()
+            });
+            // Qui disegni la tua toolbar
+                egui::Window::new("Toolbar")
+                    .open(&mut true)
+                    .show(ctx, |ui| {
+                        ui.label("Toolbar");
+                        if ui.button("Stop Streaming").clicked() {
+                            self.status_message = "Interrompendo il caster...".to_string();
+                            self.stop_signal.store(true, Ordering::SeqCst);
+                            self.caster_running.store(false, Ordering::SeqCst);
+                            self.status_message = "Caster interrotto.".to_string();
+                            self.save_original_window_state(ctx);
+                        }
+                        // Add more toolbar buttons and functionality as needed
+                    });
+
+
+
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);

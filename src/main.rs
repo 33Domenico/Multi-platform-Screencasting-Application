@@ -24,7 +24,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match args[1].as_str() {
         "ui" => {
 
-            let options = eframe::NativeOptions::default();
+            let  options =eframe::NativeOptions {
+                viewport: ViewportBuilder::default().with_transparent(true),
+                ..Default::default()
+            };
+
             eframe::run_native("Screencast App", options, Box::new(|_cc| Ok(Box::new(MyApp::default()))))?;
         }
         _ => {
