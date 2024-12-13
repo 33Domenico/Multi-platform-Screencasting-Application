@@ -1,7 +1,7 @@
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock,Mutex};
-use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget};
+use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget, FontId};
 use tokio::runtime::Runtime;
 use image::{ImageBuffer, Rgba};
 use scrap::{Capturer, Display};
@@ -14,6 +14,64 @@ enum Modality {
     Caster,
     Receiver,
 }
+
+#[derive(PartialEq, Default)]
+enum AnnotationTool {
+    #[default]
+    None,
+    Rectangle,
+    Arrow,
+    Text,
+}
+
+#[derive(PartialEq, Clone)]
+struct TextAnnotation {
+    pos: Pos2,
+    content: String,
+    is_editing: bool,
+}
+
+struct AnnotationState {
+    active_tool: AnnotationTool,
+    start_pos: Option<Pos2>,
+    end_pos: Option<Pos2>,
+    annotations: Vec<Annotation>,
+}
+
+impl Default for AnnotationState {
+    fn default() -> Self {
+        Self {
+            active_tool: AnnotationTool::None,
+            start_pos: None,
+            end_pos: None,
+            annotations: Vec::new(),
+        }
+    }
+}
+
+
+pub enum Annotation {
+    Rectangle {
+        rect: egui::Rect,
+        color: Color32,
+    },
+    Arrow {
+        start: Pos2,
+        end: Pos2,
+        color: Color32,
+    },
+    Text {
+        pos: Pos2,
+        content: String,
+        is_editing: bool,
+        color: Color32,
+    },
+    Freehand {
+        points: Vec<Pos2>,
+        color: Color32,
+    },
+}
+
 
 pub struct MyApp {
     mode: Option<Modality>,
@@ -34,6 +92,9 @@ pub struct MyApp {
     shared_frame: Arc<Mutex<SharedFrame>>,
     stream_texture: Option<egui::TextureHandle>,
     receiver_state: Arc<Mutex<ReceiverState>>, // Add this field
+    annotation_state: AnnotationState, // Add this field
+    annotations: Vec<Annotation>,
+    current_text: Option<TextAnnotation>,
 }
 #[derive(Clone)]
 struct DisplayInfo {
@@ -64,6 +125,9 @@ impl Default for MyApp {
             shared_frame: Arc::new(Mutex::new(SharedFrame::default())),
             stream_texture: None,
             receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
+            annotation_state: AnnotationState::default(), // Initialize this field
+            annotations: Vec::new(),
+            current_text: None,
         }
     }
 }
@@ -285,10 +349,146 @@ impl MyApp {
         // Imposta la modalità fullscreen
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
     }
+    fn show_annotation_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let mut tool_button = |ui: &mut egui::Ui, tool: AnnotationTool, text: &str| {
+                if ui.button(text)
+                    .clicked() {
+                    self.annotation_state.active_tool = tool;
+                }
+            };
+
+            tool_button(ui, AnnotationTool::Rectangle, "🔲");
+            tool_button(ui, AnnotationTool::Arrow, "➡️");
+            tool_button(ui, AnnotationTool::Text, "📝");
+            // Clear button
+            if ui.button("🗑️").on_hover_text("Clear All").clicked() {
+                self.annotation_state.annotations.clear();
+                self.current_text = None;
+            }
+
+        });
+    }
+    fn handle_text_annotation(&mut self, ui: &mut egui::Ui) {
+        if self.annotation_state.active_tool == AnnotationTool::Text {
+            // Handle click to start text input
+            if ui.input(|i| i.pointer.primary_clicked()) {
+                if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                    self.current_text = Some(TextAnnotation {
+                        pos,
+                        content: String::new(),
+                        is_editing: true,
+                    });
+                }
+            }
+
+            // Show text input popup if editing
+            if let Some(text_annotation) = &mut self.current_text.take() {
+                if text_annotation.is_editing {
+                    let popup_id = ui.make_persistent_id("text_input_popup");
+                    egui::Window::new("Text Input")
+                        .id(popup_id)
+                        .fixed_size(egui::Vec2::new(200.0, 50.0))
+                        .show(ui.ctx(), |ui| {
+                            ui.text_edit_singleline(&mut text_annotation.content);
+                            if ui.button("Done").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                if !text_annotation.content.is_empty() {
+                                    self.annotation_state.annotations.push(Annotation::Text {
+                                        pos: text_annotation.pos,
+                                        content: text_annotation.content.clone(),
+                                        is_editing: true,
+                                        color: Color32::WHITE,
+                                    });
+                                }
+                                self.current_text = None;
+                            }
+                        });
+                }
+            }
+        }
+    }
+    fn handle_annotations(&mut self, ui: &mut egui::Ui) {
+        let response = ui.allocate_rect(ui.max_rect(), egui::Sense::drag());
+
+        // Handle mouse input
+        if response.drag_started() {
+            self.annotation_state.start_pos = response.hover_pos();
+        }
+
+        if response.dragged() {
+            self.annotation_state.end_pos = response.hover_pos();
+        }
+
+        if response.drag_released() {
+            if let (Some(start), Some(end)) = (self.annotation_state.start_pos, self.annotation_state.end_pos) {
+                match self.annotation_state.active_tool {
+                    AnnotationTool::Rectangle => {
+                        let rect = Rect::from_two_pos(start, end);
+                        self.annotation_state.annotations.push(Annotation::Rectangle{rect,color: Color32::WHITE});
+                    },
+                    AnnotationTool::Arrow => {
+                        self.annotation_state.annotations.push(Annotation::Arrow { start, end,color: Color32::WHITE });
+                    },
+                    AnnotationTool::Text => {
+                        self.annotation_state.annotations.push(Annotation::Text {
+                            pos: start,
+                            content: String::new(),
+                            is_editing: true,
+                            color: Color32::WHITE,
+                        });
+                    },
+                    _ => {}
+                }
+            }
+            self.annotation_state.start_pos = None;
+            self.annotation_state.end_pos = None;
+        }
+
+        // Draw existing annotations
+        let painter = ui.painter();
+        for annotation in &self.annotation_state.annotations {
+            match annotation {
+                Annotation::Rectangle{rect, ..} => {
+                    painter.rect_stroke(*rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+                },
+                Annotation::Arrow { start, end, .. } => {
+                    painter.arrow(*start, *end - *start, egui::Stroke::new(2.0, Color32::WHITE));
+                },
+                Annotation::Text { pos, content, .. } => {
+                    painter.text(
+                        *pos,
+                        egui::Align2::LEFT_TOP,
+                        content,
+                        FontId::proportional(14.0),
+                        Color32::WHITE,
+                    );
+                },
+                _ => {}
+            }
+        }
+
+        // Draw current annotation preview
+        if let (Some(start), Some(end)) = (self.annotation_state.start_pos, self.annotation_state.end_pos) {
+            match self.annotation_state.active_tool {
+                AnnotationTool::Rectangle => {
+                    let rect = Rect::from_two_pos(start, end);
+                    painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
+                },
+                AnnotationTool::Arrow => {
+                    painter.arrow(start, end - start, egui::Stroke::new(2.0, Color32::WHITE));
+                },
+                _ => {}
+            }
+        }
+    }
+
+
     fn save_original_window_state(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true)); // Rimuovi i bordi
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+
     }
 
 
@@ -296,6 +496,7 @@ impl MyApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false)); // Rimuovi i bordi
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
 }
 
@@ -308,7 +509,7 @@ impl App for MyApp {
 
         if self.selecting_area {
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 200)))
+                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 0)))
                 .show(ctx, |ui| {
                     let mut image_rect = egui::Rect::NOTHING;
 
@@ -379,32 +580,27 @@ impl App for MyApp {
             egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
                 self.display_error(ui);
                 ui.label("Casting in corso...");
-            });
-
-
-
-            ctx.set_visuals(egui::Visuals {
-                window_fill: egui::Color32::from_rgb(0, 0, 0), // Imposta il colore di sfondo della finestra a trasparente
-                ..Default::default()
+                self.handle_annotations(ui);
+                self.handle_text_annotation(ui);
             });
             // Qui disegni la tua toolbar
-                egui::Window::new("Toolbar")
+                egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
+                    .title_bar(false)
+                    .resizable(false)
                     .open(&mut true)
                     .show(ctx, |ui| {
                         ui.label("Toolbar");
-                        if ui.button("Stop Streaming").clicked() {
+                        self.show_annotation_toolbar(ui);
+                        if ui.button("⏹").clicked() {
                             self.status_message = "Interrompendo il caster...".to_string();
                             self.stop_signal.store(true, Ordering::SeqCst);
                             self.caster_running.store(false, Ordering::SeqCst);
                             self.status_message = "Caster interrotto.".to_string();
                             self.save_original_window_state(ctx);
                         }
-                        // Add more toolbar buttons and functionality as needed
                     });
-
-
-
         } else {
+            self.save_original_window_state(ctx);
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);
                 ui.heading("Screencast Application");
@@ -511,13 +707,6 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
-                                if ui.button("Stop").clicked() {
-                                    self.status_message = "Interrompendo il caster...".to_string();
-                                    self.stop_signal.store(true, Ordering::SeqCst);
-                                    self.caster_running.store(false,Ordering::SeqCst);
-                                    self.status_message = "Caster interrotto.".to_string();
-                                }
-
                                 ui.label("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
                             }
                         }
@@ -671,8 +860,6 @@ impl App for MyApp {
                                     image.ui(ui);
                                 }
                                 ctx.request_repaint();
-
-
                             }
                         }
                     }
