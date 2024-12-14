@@ -36,6 +36,8 @@ struct AnnotationState {
     start_pos: Option<Pos2>,
     end_pos: Option<Pos2>,
     annotations: Vec<Annotation>,
+    editing_text: Option<String>,
+    text_edit_id: Option<egui::Id>,
 }
 
 impl Default for AnnotationState {
@@ -45,6 +47,8 @@ impl Default for AnnotationState {
             start_pos: None,
             end_pos: None,
             annotations: Vec::new(),
+            editing_text: None,
+            text_edit_id: None,
         }
     }
 }
@@ -64,10 +68,6 @@ pub enum Annotation {
         pos: Pos2,
         content: String,
         is_editing: bool,
-        color: Color32,
-    },
-    Freehand {
-        points: Vec<Pos2>,
         color: Color32,
     },
 }
@@ -94,7 +94,6 @@ pub struct MyApp {
     receiver_state: Arc<Mutex<ReceiverState>>, // Add this field
     annotation_state: AnnotationState, // Add this field
     annotations: Vec<Annotation>,
-    current_text: Option<TextAnnotation>,
 }
 #[derive(Clone)]
 struct DisplayInfo {
@@ -127,7 +126,6 @@ impl Default for MyApp {
             receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
             annotation_state: AnnotationState::default(), // Initialize this field
             annotations: Vec::new(),
-            current_text: None,
         }
     }
 }
@@ -364,86 +362,81 @@ impl MyApp {
             // Clear button
             if ui.button("🗑️").on_hover_text("Clear All").clicked() {
                 self.annotation_state.annotations.clear();
-                self.current_text = None;
             }
 
         });
     }
-    fn handle_text_annotation(&mut self, ui: &mut egui::Ui) {
-        if self.annotation_state.active_tool == AnnotationTool::Text {
-            // Handle click to start text input
-            if ui.input(|i| i.pointer.primary_clicked()) {
-                if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                    self.current_text = Some(TextAnnotation {
-                        pos,
-                        content: String::new(),
-                        is_editing: true,
-                    });
-                }
-            }
 
-            // Show text input popup if editing
-            if let Some(text_annotation) = &mut self.current_text.take() {
-                if text_annotation.is_editing {
-                    let popup_id = ui.make_persistent_id("text_input_popup");
-                    egui::Window::new("Text Input")
-                        .id(popup_id)
-                        .fixed_size(egui::Vec2::new(200.0, 50.0))
-                        .show(ui.ctx(), |ui| {
-                            ui.text_edit_singleline(&mut text_annotation.content);
-                            if ui.button("Done").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                if !text_annotation.content.is_empty() {
-                                    self.annotation_state.annotations.push(Annotation::Text {
-                                        pos: text_annotation.pos,
-                                        content: text_annotation.content.clone(),
-                                        is_editing: true,
-                                        color: Color32::WHITE,
-                                    });
-                                }
-                                self.current_text = None;
-                            }
-                        });
-                }
-            }
-        }
-    }
     fn handle_annotations(&mut self, ui: &mut egui::Ui) {
-        let response = ui.allocate_rect(ui.max_rect(), egui::Sense::drag());
+        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+        let mouse_pressed = ui.input(|i| i.pointer.primary_pressed());
+        let mouse_released = ui.input(|i| i.pointer.primary_released());
 
-        // Handle mouse input
-        if response.drag_started() {
-            self.annotation_state.start_pos = response.hover_pos();
-        }
-
-        if response.dragged() {
-            self.annotation_state.end_pos = response.hover_pos();
-        }
-
-        if response.drag_released() {
-            if let (Some(start), Some(end)) = (self.annotation_state.start_pos, self.annotation_state.end_pos) {
-                match self.annotation_state.active_tool {
-                    AnnotationTool::Rectangle => {
-                        let rect = Rect::from_two_pos(start, end);
-                        self.annotation_state.annotations.push(Annotation::Rectangle{rect,color: Color32::WHITE});
-                    },
-                    AnnotationTool::Arrow => {
-                        self.annotation_state.annotations.push(Annotation::Arrow { start, end,color: Color32::WHITE });
-                    },
-                    AnnotationTool::Text => {
-                        self.annotation_state.annotations.push(Annotation::Text {
-                            pos: start,
-                            content: String::new(),
-                            is_editing: true,
-                            color: Color32::WHITE,
-                        });
-                    },
-                    _ => {}
+        if let Some(pos) = pointer_pos {
+            if mouse_pressed {
+                self.annotation_state.start_pos = Some(pos);
+                if self.annotation_state.active_tool == AnnotationTool::Text
+                    && self.annotation_state.editing_text.is_none() {
+                    self.annotation_state.editing_text = Some(String::new());
+                    self.annotation_state.text_edit_id = Some(egui::Id::new("text_edit"));
+                }
+            } else if mouse_released {
+                if let Some(start) = self.annotation_state.start_pos {
+                    match self.annotation_state.active_tool {
+                        AnnotationTool::Rectangle => {
+                            let rect = Rect::from_two_pos(start, pos);
+                            self.annotation_state.annotations.push(Annotation::Rectangle {
+                                rect,
+                                color: Color32::WHITE,
+                            });
+                            self.annotation_state.start_pos = None;
+                        },
+                        AnnotationTool::Arrow => {
+                            self.annotation_state.annotations.push(Annotation::Arrow {
+                                start,
+                                end: pos,
+                                color: Color32::WHITE,
+                            });
+                            self.annotation_state.start_pos = None;
+                        },
+                        AnnotationTool::Text => {
+                            // Non resettare lo stato per il text tool
+                        },
+                        _ => {}
+                    }
                 }
             }
-            self.annotation_state.start_pos = None;
-            self.annotation_state.end_pos = None;
         }
 
+        // Handle text editing prima del painter
+        if let Some(start) = self.annotation_state.start_pos {
+            if self.annotation_state.active_tool == AnnotationTool::Text {
+                if let Some(editing_text) = &mut self.annotation_state.editing_text {
+                    let text_edit = egui::TextEdit::singleline(editing_text)
+                        .desired_width(200.0)
+                        .font(FontId::proportional(14.0));
+
+                    let response = ui.put(
+                        Rect::from_min_size(start, egui::Vec2::new(200.0, 20.0)),
+                        text_edit
+                    );
+
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if !editing_text.is_empty() {
+                            self.annotation_state.annotations.push(Annotation::Text {
+                                pos: start,
+                                content: editing_text.clone(),
+                                is_editing: true,
+                                color: Color32::WHITE,
+                            });
+                        }
+                        self.annotation_state.editing_text = None;
+                        self.annotation_state.text_edit_id = None;
+                        self.annotation_state.start_pos = None;
+                    }
+                }
+            }
+        }
         // Draw existing annotations
         let painter = ui.painter();
         for annotation in &self.annotation_state.annotations {
@@ -463,9 +456,9 @@ impl MyApp {
                         Color32::WHITE,
                     );
                 },
-                _ => {}
             }
         }
+
 
         // Draw current annotation preview
         if let (Some(start), Some(end)) = (self.annotation_state.start_pos, self.annotation_state.end_pos) {
@@ -476,6 +469,9 @@ impl MyApp {
                 },
                 AnnotationTool::Arrow => {
                     painter.arrow(start, end - start, egui::Stroke::new(2.0, Color32::WHITE));
+                },
+                AnnotationTool::Text => {
+                    // Text preview not needed as we show the text edit directly
                 },
                 _ => {}
             }
@@ -581,7 +577,6 @@ impl App for MyApp {
                 self.display_error(ui);
                 ui.label("Casting in corso...");
                 self.handle_annotations(ui);
-                self.handle_text_annotation(ui);
             });
             // Qui disegni la tua toolbar
                 egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
