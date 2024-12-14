@@ -599,14 +599,16 @@ impl App for MyApp {
                 self.display_error(ui);
                 ui.heading("Screencast Application");
                 ui.horizontal(|ui| {
-                    if ui.button("Caster").clicked()  {
+                    let caster_button = ui.add_enabled(!self.receiver_running.load(Ordering::SeqCst), egui::Button::new("Caster"));
+                    if caster_button.clicked()  {
                         self.clear_error();
                         self.mode = Some(Modality::Caster);
                         self.stop_signal.store(false, Ordering::SeqCst);
                         self.selecting_area = false;
                         self.status_message = "Modalità selezionata: Caster".to_string();
                     }
-                    if ui.button("Receiver").clicked()  {
+                    let receiver_button = ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), egui::Button::new("Receiver"));
+                    if receiver_button.clicked()  {
                         self.clear_error();
                         self.mode = Some(Modality::Receiver);
                         self.stop_signal.store(false, Ordering::SeqCst);
