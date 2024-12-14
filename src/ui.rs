@@ -348,6 +348,9 @@ impl MyApp {
 
         // Imposta la modalità fullscreen
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
+
+
     }
     fn show_annotation_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -592,8 +595,7 @@ impl App for MyApp {
                         }
                     });
 
-        } else
-        {
+        } else {
             self.save_original_window_state(ctx);
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);
