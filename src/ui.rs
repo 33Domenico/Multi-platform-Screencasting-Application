@@ -94,6 +94,7 @@ pub struct MyApp {
     receiver_state: Arc<Mutex<ReceiverState>>, // Add this field
     annotation_state: AnnotationState, // Add this field
     annotations: Vec<Annotation>,
+    toolbar_visible: bool,
 }
 #[derive(Clone)]
 struct DisplayInfo {
@@ -126,6 +127,7 @@ impl Default for MyApp {
             receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
             annotation_state: AnnotationState::default(), // Initialize this field
             annotations: Vec::new(),
+            toolbar_visible: false,
         }
     }
 }
@@ -481,7 +483,6 @@ impl MyApp {
 
     fn save_original_window_state(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true)); // Rimuovi i bordi
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
 
@@ -490,7 +491,6 @@ impl MyApp {
 
     fn set_fullscreen_transparent(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false)); // Rimuovi i bordi
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
@@ -570,15 +570,14 @@ impl App for MyApp {
                     // Gestisci la selezione con il rettangolo dell'immagine
                     self.handle_selection(ctx, image_rect);
                 });
-        }  else if self.caster_running.load(Ordering::SeqCst) { //se il casting è avviato rendo la finestra trasparente
-
-            self.set_fullscreen_transparent(ctx);
-            egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
-                self.display_error(ui);
-                ui.label("Casting in corso...");
-                self.handle_annotations(ui);
-            });
-            // Qui disegni la tua toolbar
+        } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
+                self.set_fullscreen_transparent(ctx);
+                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
+                    self.display_error(ui);
+                    ui.label("Casting in corso...");
+                    self.handle_annotations(ui);
+                });
+                // Qui disegni la tua toolbar
                 egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
                     .title_bar(false)
                     .resizable(false)
@@ -587,14 +586,14 @@ impl App for MyApp {
                         ui.label("Toolbar");
                         self.show_annotation_toolbar(ui);
                         if ui.button("⏹").clicked() {
-                            self.status_message = "Interrompendo il caster...".to_string();
-                            self.stop_signal.store(true, Ordering::SeqCst);
-                            self.caster_running.store(false, Ordering::SeqCst);
-                            self.status_message = "Caster interrotto.".to_string();
+                            self.status_message = "Chiudendo toolbar".to_string();
+                            self.toolbar_visible = false;
                             self.save_original_window_state(ctx);
                         }
                     });
-        } else {
+
+        } else
+        {
             self.save_original_window_state(ctx);
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);
@@ -703,6 +702,15 @@ impl App for MyApp {
                                 }
                             } else {
                                 ui.label("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
+                                if ui.button(if self.toolbar_visible {"Hide Toolbar"} else {"Show Toolbar"}).clicked() {
+                                    self.toolbar_visible = !self.toolbar_visible;
+                                }
+                                if ui.button("⏹").clicked() {
+                                    self.status_message = "Interrompendo il caster...".to_string();
+                                    self.stop_signal.store(true, Ordering::SeqCst);
+                                    self.caster_running.store(false, Ordering::SeqCst);
+                                    self.status_message = "Caster interrotto.".to_string();
+                                }
                             }
                         }
                         Modality::Receiver => {
