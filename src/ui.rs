@@ -485,7 +485,6 @@ impl MyApp {
 
 
     fn save_original_window_state(&self, ctx: &egui::Context) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
 
@@ -493,7 +492,6 @@ impl MyApp {
 
 
     fn set_fullscreen_transparent(&self, ctx: &egui::Context) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
