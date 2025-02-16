@@ -177,7 +177,6 @@ impl MyApp {
     }
     fn handle_selection(&mut self, ctx: &egui::Context, image_rect: egui::Rect) {
         if self.selecting_area {
-
             ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
 
             let response = ctx.input(|i| {
@@ -188,69 +187,73 @@ impl MyApp {
             });
 
             if let (Some(current_pos), pressed, released) = response {
+
+                // Add safety checks for the image_rect dimensions
+                if image_rect.width() <= 0.0 || image_rect.height() <= 0.0 {
+                    self.selecting_area = false;
+                    self.set_error("Invalid display dimensions".to_string());
+                    return;
+                }
+
                 let clamped_pos = Pos2::new(
                     current_pos.x.clamp(image_rect.min.x, image_rect.max.x),
                     current_pos.y.clamp(image_rect.min.y, image_rect.max.y)
                 );
 
                 if pressed && self.start_pos.is_none() {
-                    self.start_pos = Some(clamped_pos);
-                    self.start_pos_relative = Some(Pos2::new(
-                        (clamped_pos.x - image_rect.min.x) / image_rect.width(),
-                        (clamped_pos.y - image_rect.min.y) / image_rect.height()
-                    ));
+                    // Add validation for the starting position
+                    if clamped_pos.x.is_finite() && clamped_pos.y.is_finite() {
+                        self.start_pos = Some(clamped_pos);
+                        self.start_pos_relative = Some(Pos2::new(
+                            (clamped_pos.x - image_rect.min.x) / image_rect.width(),
+                            (clamped_pos.y - image_rect.min.y) / image_rect.height()
+                        ));
+                    }
                 } else if released && self.start_pos.is_some() {
-                    let start_relative = self.start_pos_relative.unwrap();
-                    let end_relative = Pos2::new(
-                        (clamped_pos.x - image_rect.min.x) / image_rect.width(),
-                        (clamped_pos.y - image_rect.min.y) / image_rect.height()
-                    );
+                    if let Some(start_relative) = self.start_pos_relative {
+                        // Validate relative coordinates
+                        let end_relative = Pos2::new(
+                            ((clamped_pos.x - image_rect.min.x) / image_rect.width()).clamp(0.0, 1.0),
+                            ((clamped_pos.y - image_rect.min.y) / image_rect.height()).clamp(0.0, 1.0)
+                        );
+                        if let Some(display_index) = self.selected_display_index {
+                            if let Ok(displays) = Display::all() {
+                                if let Some(display) = displays.get(display_index) {
+                                    let screen_width = display.width() as f32;
+                                    let screen_height = display.height() as f32;
 
-                    if let Some(display_index) = self.selected_display_index {
-                        if let Ok(displays) = Display::all() {
-                            if let Some(display) = displays.get(display_index) {
-                                // Calcola le coordinate rispetto al monitor selezionato
-                                let screen_width = display.width() as f32;
-                                let screen_height = display.height() as f32;
-
-                                let screen_rect = Rect::from_two_pos(
-                                    Pos2::new(
-                                        (start_relative.x * screen_width).round(),
-                                        (start_relative.y * screen_height).round()
-                                    ),
-                                    Pos2::new(
-                                        (end_relative.x * screen_width).round(),
-                                        (end_relative.y * screen_height).round()
-                                    )
-                                );
-
-                                self.selected_area = Some(Rect::from_two_pos(
-                                    Pos2::new(
-                                        screen_rect.min.x.min(screen_rect.max.x),
-                                        screen_rect.min.y.min(screen_rect.max.y)
-                                    ),
-                                    Pos2::new(
-                                        screen_rect.min.x.max(screen_rect.max.x),
-                                        screen_rect.min.y.max(screen_rect.max.y)
-                                    )
-                                ));
+                                    // Ensure we're creating a valid rectangle
+                                    let min_x = (start_relative.x.min(end_relative.x) * screen_width).round();
+                                    let min_y = (start_relative.y.min(end_relative.y) * screen_height).round();
+                                    let max_x = (start_relative.x.max(end_relative.x) * screen_width).round();
+                                    let max_y = (start_relative.y.max(end_relative.y) * screen_height).round();
+                                    // Additional validation before creating the rectangle
+                                    if min_x < max_x && min_y < max_y {
+                                        self.selected_area = Some(Rect::from_min_max(
+                                            Pos2::new(min_x, min_y),
+                                            Pos2::new(max_x, max_y)
+                                        ));
+                                    }
+                                }
                             }
                         }
+
+                        self.selecting_area = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+
+                        if let Some(area) = self.selected_area {
+                            self.status_message = format!("Area selezionata: {:?}", area);
+                        } else {
+                            self.status_message = "Selezione area non valida".to_string();
+                        }
                     }
-
-                    self.selecting_area = false;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-                    // Ripristina la posizione della finestra
-
-                    self.status_message = format!("Area selezionata: {:?}", self.selected_area.unwrap());
                 }
 
                 if self.selecting_area && self.start_pos.is_some() {
                     ctx.request_repaint();
                 }
             }
-        }
-        else {
+        } else {
             ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
         }
     }
@@ -264,9 +267,9 @@ impl MyApp {
                 return;
             }
         };
-
         let displays = match Display::all() {
-            Ok(displays) => displays,
+            Ok(displays) => {
+                displays },
             Err(e) => {
                 self.set_error(format!("Errore nell'accesso ai display: {}", e));
                 return;
@@ -282,18 +285,18 @@ impl MyApp {
         let target_display = displays.into_iter().nth(display_index).unwrap();
         let width= target_display.width();
         let height =target_display.height();
-
         let mut capturer = match Capturer::new(target_display) {
-            Ok(capturer) => capturer,
+            Ok(capturer) => {
+                capturer },
             Err(e) => {
                 self.set_error(format!("Errore nella creazione del capturer: {}", e));
                 return;
             }
         };
-
         let frame = loop {
             match capturer.frame() {
-                Ok(frame) => break frame,
+                Ok(frame) => {
+                    break frame; },
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(100));
                     continue;
@@ -330,27 +333,9 @@ impl MyApp {
             color_image,
             egui::TextureOptions::LINEAR,
         ));
-
-        // Calcola la posizione corretta per la finestra
-        if let Ok(displays) = Display::all() {
-            let mut x_offset = 0;
-            let mut found_display = false;
-
-            // Calcola l'offset corretto basato sulla posizione relativa dei monitor
-            for (idx, d) in displays.iter().enumerate() {
-                if idx == display_index {
-                    found_display = true;
-                    break;
-                }
-                x_offset += d.width() as i32;
-            }
-        }
-
         // Imposta la modalità fullscreen
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
-
-
     }
     fn show_annotation_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -529,7 +514,6 @@ impl App for MyApp {
                             available_rect.center(),
                             size
                         );
-
                         let image = Image::from_texture(texture)
                             .fit_to_exact_size(size)
                             .tint(Color32::from_rgba_unmultiplied(110, 110, 110, 200));
@@ -552,7 +536,6 @@ impl App for MyApp {
                             }
                         }
                     }
-
                     // Mostra il messaggio di istruzione
                     let screen_rect = ui.max_rect();
                     let center_x = screen_rect.center().x;
@@ -569,7 +552,9 @@ impl App for MyApp {
                     });
 
                     // Gestisci la selezione con il rettangolo dell'immagine
-                    self.handle_selection(ctx, image_rect);
+                    if self.screenshot.is_some() { // Add this condition
+                        self.handle_selection(ctx, image_rect);
+                    }
                 });
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
