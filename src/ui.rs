@@ -380,6 +380,7 @@ impl MyApp {
                                 color: Color32::WHITE,
                             });
                             self.annotation_state.start_pos = None;
+                            self.annotation_state.end_pos = None;
                         },
                         AnnotationTool::Arrow => {
                             self.annotation_state.annotations.push(Annotation::Arrow {
@@ -388,6 +389,8 @@ impl MyApp {
                                 color: Color32::WHITE,
                             });
                             self.annotation_state.start_pos = None;
+                            self.annotation_state.end_pos = None;
+
                         },
                         AnnotationTool::Text => {
                             // Non resettare lo stato per il text tool
@@ -395,6 +398,9 @@ impl MyApp {
                         _ => {}
                     }
                 }
+            } else if mouse_pressed {
+                // Aggiorna la posizione finale durante il trascinamento
+                self.annotation_state.end_pos = Some(pos);
             }
         }
 
@@ -451,14 +457,14 @@ impl MyApp {
 
 
         // Draw current annotation preview
-        if let (Some(start), Some(end)) = (self.annotation_state.start_pos, self.annotation_state.end_pos) {
+        if let (Some(start), Some(current_pos)) = (self.annotation_state.start_pos, pointer_pos) {
             match self.annotation_state.active_tool {
                 AnnotationTool::Rectangle => {
-                    let rect = Rect::from_two_pos(start, end);
+                    let rect = Rect::from_two_pos(start, current_pos);
                     painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 AnnotationTool::Arrow => {
-                    painter.arrow(start, end - start, egui::Stroke::new(2.0, Color32::WHITE));
+                    painter.arrow(start, current_pos - start, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 AnnotationTool::Text => {
                     // Text preview not needed as we show the text edit directly
@@ -466,6 +472,7 @@ impl MyApp {
                 _ => {}
             }
         }
+
     }
 
 
@@ -579,7 +586,6 @@ impl App for MyApp {
                     });
 
         } else {
-            self.save_original_window_state(ctx);
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);
                 ui.heading("Screencast Application");
