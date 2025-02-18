@@ -565,7 +565,7 @@ impl App for MyApp {
                 });
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
-                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
+                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 20))).show(ctx, |ui| {
                     self.display_error(ui);
                     ui.label("Casting in corso...");
                     self.handle_annotations(ui);
@@ -694,7 +694,8 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
-                                ui.label("\nShortcuts:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
+                                ui.label("\nShortcuts Windows/Linux:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
+                                ui.label("\nShortcuts Mac:\nCmd + shift + P --> Metti in pausa lo stream;\nCmd + shift + B  --> Blank screen;\nCmd + shift + Q  --> Interrompi lo stream\n");
                                 if ui.button(if self.toolbar_visible {"Hide Toolbar"} else {"Show Toolbar"}).clicked() {
                                     self.toolbar_visible = !self.toolbar_visible;
                                 }

@@ -17,6 +17,10 @@ struct HotkeyState {
     terminate: Arc<AtomicBool>,
 }
 
+
+
+
+
 fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
     let device_state = DeviceState::new();
     let mut last_keys = Vec::new();
@@ -25,6 +29,7 @@ fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
         let keys: Vec<Keycode> = device_state.get_keys();
 
         if keys != last_keys {
+            // Supporto Windows/Linux shortcuts
             if keys.contains(&Keycode::F1) {
                 hotkey_state.paused.fetch_xor(true, Ordering::SeqCst);
                 println!("Trasmissione {}.", if hotkey_state.paused.load(Ordering::SeqCst) { "paused" } else { "resumed" });
@@ -34,6 +39,24 @@ fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
                 println!("Schermo {}.", if hotkey_state.screen_blanked.load(Ordering::SeqCst) { "blanked" } else { "unblanked" });
             }
             if keys.contains(&Keycode::Escape) {
+                hotkey_state.terminate.store(true, Ordering::SeqCst);
+                println!("Terminazione richiesta.");
+                break;
+            }
+
+            let ctrl_or_cmd = keys.contains(&Keycode::LControl) || keys.contains(&Keycode::RControl) ||
+                keys.contains(&Keycode::LMeta) || keys.contains(&Keycode::RMeta);
+            let shift = keys.contains(&Keycode::LShift) || keys.contains(&Keycode::RShift);
+
+            if ctrl_or_cmd && shift && keys.contains(&Keycode::P) {
+                hotkey_state.paused.fetch_xor(true, Ordering::SeqCst);
+                println!("Trasmissione {}.", if hotkey_state.paused.load(Ordering::SeqCst) { "paused" } else { "resumed" });
+            }
+            if ctrl_or_cmd && shift && keys.contains(&Keycode::B) {
+                hotkey_state.screen_blanked.fetch_xor(true, Ordering::SeqCst);
+                println!("Schermo {}.", if hotkey_state.screen_blanked.load(Ordering::SeqCst) { "blanked" } else { "unblanked" });
+            }
+            if ctrl_or_cmd && shift && keys.contains(&Keycode::Q) {
                 hotkey_state.terminate.store(true, Ordering::SeqCst);
                 println!("Terminazione richiesta.");
                 break;
