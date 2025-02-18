@@ -536,6 +536,22 @@ impl MyApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
+
+    fn get_shortcuts_message(&self) -> String {
+        if cfg!(target_os = "macos") {
+            "\nShortcuts Mac:\n\
+            Cmd + Shift + P --> Metti in pausa lo stream\n\
+            Cmd + Shift + B --> Blank screen\n\
+            Cmd + Shift + Q --> Interrompi lo stream\n"
+                .to_string()
+        } else {
+            "\nShortcuts Windows/Linux:\n\
+            Fn + F1 --> Metti in pausa lo stream\n\
+            Fn + F2--> Blank screen\n\
+            ESC --> Interrompi lo stream\n"
+                .to_string()
+        }
+    }
 }
 
 impl App for MyApp {
@@ -744,8 +760,7 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
-                                ui.label("\nShortcuts Windows/Linux:\nFn + F1 --> Metti in pausa lo stream;\nFn + F2 --> Blank screen;\nESC --> Interrompi lo stream\n");
-                                ui.label("\nShortcuts Mac:\nCmd + shift + P --> Metti in pausa lo stream;\nCmd + shift + B  --> Blank screen;\nCmd + shift + Q  --> Interrompi lo stream\n");
+                                ui.label(self.get_shortcuts_message());
                                 if ui.button(if self.toolbar_visible {"Hide Toolbar"} else {"Show Toolbar"}).clicked() {
                                     self.toolbar_visible = !self.toolbar_visible;
                                 }
