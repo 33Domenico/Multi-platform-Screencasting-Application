@@ -1,3 +1,4 @@
+use std::fmt::format;
 use eframe::{egui, App, Frame, CreationContext};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock,Mutex};
@@ -8,6 +9,7 @@ use scrap::{Capturer, Display};
 use std::time::Duration;
 use std::thread;
 use crate::receiver::{ReceiverState, SharedFrame};
+use egui_extras::RetainedImage;
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -15,7 +17,7 @@ enum Modality {
     Receiver,
 }
 
-#[derive(PartialEq, Default)]
+#[derive(PartialEq, Default, Clone, Copy)]
 enum AnnotationTool {
     #[default]
     None,
@@ -23,6 +25,7 @@ enum AnnotationTool {
     Arrow,
     Text,
 }
+
 
 #[derive(PartialEq, Clone)]
 struct TextAnnotation {
@@ -339,21 +342,31 @@ impl MyApp {
     }
     fn show_annotation_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let mut tool_button = |ui: &mut egui::Ui, tool: AnnotationTool, text: &str| {
-                if ui.button(text)
-                    .clicked() {
-                    self.annotation_state.active_tool = tool;
+            let mut tool_button = |ui: &mut egui::Ui, tool: AnnotationTool, icon: &str ,label: &str| {
+                let button = egui::Button::new(format!("{icon} {label}"))
+                    .min_size(egui::vec2(80.0, 40.0));
+                let response = ui.add(button);
+
+                if response.clicked(){
+                    self.annotation_state.active_tool = tool.clone();
                 }
+
+                if self.annotation_state.active_tool == tool{
+                    response.clone().highlight();
+                }
+                response.on_hover_text(format!("Usa lo strumento: {label}"));
             };
 
-            tool_button(ui, AnnotationTool::Rectangle, "🔲");
-            tool_button(ui, AnnotationTool::Arrow, "➡️");
-            tool_button(ui, AnnotationTool::Text, "📝");
+            tool_button(ui, AnnotationTool::Rectangle, "▭", "Rettangolo");
+            tool_button(ui, AnnotationTool::Arrow, "➡", "Freccia");
+            tool_button(ui, AnnotationTool::Text, "📝", "Testo");
             // Clear button
-            if ui.button("🗑️").on_hover_text("Clear All").clicked() {
+            let clear_button = egui::Button::new("❌ Cancella Tutto")
+                .min_size(egui::vec2(100.0, 40.0));
+
+            if ui.add(clear_button).on_hover_text("Elimina tutte le annotazioni").clicked(){
                 self.annotation_state.annotations.clear();
             }
-
         });
     }
 
@@ -578,7 +591,7 @@ impl App for MyApp {
                     .show(ctx, |ui| {
                         ui.label("Toolbar");
                         self.show_annotation_toolbar(ui);
-                        if ui.button("⏹").clicked() {
+                        if ui.button("⏹ Chiudi toolbar").clicked() {
                             self.status_message = "Chiudendo toolbar".to_string();
                             self.toolbar_visible = false;
                             self.save_original_window_state(ctx);
