@@ -370,6 +370,42 @@ impl MyApp {
         });
     }
 
+    fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, color: egui::Color32) {
+        let stroke = egui::Stroke::new(2.0, color);
+
+        // Calcola la direzione e la lunghezza della freccia
+        let dir = end - start;
+        let length = dir.length();
+        if length < 5.0 {
+            return; // Evita di disegnare frecce troppo piccole
+        }
+
+        // Normalizza la direzione
+        let dir_normalized = dir / length;
+
+        // Lunghezza della punta della freccia
+        let arrowhead_length = 16.0;
+        let arrowhead_width = 10.0;
+
+        // Calcola la base della punta della freccia
+        let tip = end;
+        let base = end - dir_normalized * arrowhead_length;
+
+        // Calcola i punti laterali della punta
+        let perp = egui::Vec2::new(-dir_normalized.y, dir_normalized.x) * (arrowhead_width / 2.0);
+        let left = base + perp;
+        let right = base - perp;
+
+        // Disegna il corpo della freccia (senza la punta)
+        let line_end = base; // La linea finisce alla base della punta
+        painter.line_segment([start, line_end], stroke);
+
+        // Disegna la punta della freccia come triangolo
+        let points = vec![tip, left, right];
+        painter.add(egui::Shape::convex_polygon(points, color, stroke));
+    }
+
+
     fn handle_annotations(&mut self, ui: &mut egui::Ui) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos());
         let mouse_pressed = ui.input(|i| i.pointer.primary_pressed());
@@ -454,7 +490,7 @@ impl MyApp {
                     painter.rect_stroke(*rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 Annotation::Arrow { start, end, .. } => {
-                    painter.arrow(*start, *end - *start, egui::Stroke::new(2.0, Color32::WHITE));
+                    Self::draw_arrow(&painter, *start, *end, Color32::WHITE);
                 },
                 Annotation::Text { pos, content, .. } => {
                     painter.text(
@@ -477,7 +513,7 @@ impl MyApp {
                     painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 AnnotationTool::Arrow => {
-                    painter.arrow(start, current_pos - start, egui::Stroke::new(2.0, Color32::WHITE));
+                    Self::draw_arrow(&painter, start, current_pos, Color32::WHITE);
                 },
                 AnnotationTool::Text => {
                     // Text preview not needed as we show the text edit directly
@@ -552,7 +588,7 @@ impl App for MyApp {
 
                                 let rect = Rect::from_two_pos(start, clamped_current);
                                 ui.painter().rect_stroke(rect, 0.0, (2.0, Color32::WHITE));
-                                ui.painter().rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 50));
+                                ui.painter().rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 50));
                             }
                         }
                     }
@@ -578,20 +614,21 @@ impl App for MyApp {
                 });
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
-                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 20))).show(ctx, |ui| {
+                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0,0,0,20))).show(ctx, |ui| {
                     self.display_error(ui);
                     ui.label("Casting in corso...");
                     self.handle_annotations(ui);
                 });
                 // Qui disegni la tua toolbar
-                egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
-                    .title_bar(false)
+            egui::Window::new("Toolbar")
+                .auto_sized()
+                .title_bar(false)
                     .resizable(false)
                     .open(&mut true)
                     .show(ctx, |ui| {
                         ui.label("Toolbar");
                         self.show_annotation_toolbar(ui);
-                        if ui.button("⏹ Chiudi toolbar").clicked() {
+                        if ui.add(egui::Button::new("⏹ Chiudi toolbar")).clicked() {
                             self.status_message = "Chiudendo toolbar".to_string();
                             self.toolbar_visible = false;
                             self.save_original_window_state(ctx);
