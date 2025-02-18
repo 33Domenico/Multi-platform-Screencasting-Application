@@ -541,19 +541,12 @@ impl MyApp {
     }
 
     fn get_shortcuts_message(&self) -> String {
-        if cfg!(target_os = "macos") {
-            "\nShortcuts Mac:\n\
-            Cmd + Shift + P --> Metti in pausa lo stream\n\
-            Cmd + Shift + B --> Blank screen\n\
-            Cmd + Shift + Q --> Interrompi lo stream\n"
-                .to_string()
-        } else {
-            "\nShortcuts Windows/Linux:\n\
-            Fn + F1 --> Metti in pausa lo stream\n\
-            Fn + F2--> Blank screen\n\
-            ESC --> Interrompi lo stream\n"
-                .to_string()
-        }
+        "\nShortcuts Windows/Linux:\n\
+        Fn + F1 --> Metti in pausa lo stream\n\
+        Fn + F2--> Blank screen\n\
+        ESC --> Interrompi lo stream\n"
+            .to_string()
+
     }
 }
 
