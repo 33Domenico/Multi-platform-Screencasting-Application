@@ -175,16 +175,15 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
     Ok(())
 }
 
-pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize) -> Result<(), Box<dyn Error>> {
+pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize,paused: Arc<AtomicBool>, screen_blanked: Arc<AtomicBool>,terminate: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(addr).await?;
     let (tx, _rx) = broadcast::channel::<Vec<u8>>(10);
     let tx = Arc::new(tx);
     println!("Caster avviato su {}", addr);
-
     let hotkey_state = Arc::new(HotkeyState {
-        paused: Arc::new(AtomicBool::new(false)),
-        screen_blanked: Arc::new(AtomicBool::new(false)),
-        terminate: Arc::new(AtomicBool::new(false)),
+        paused,
+        screen_blanked,
+        terminate,
     });
 
     let hotkey_state_clone = Arc::clone(&hotkey_state);
@@ -240,5 +239,8 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
 
     capture_screen(&*Arc::clone(&tx), stop_signal, selected_area, Arc::clone(&hotkey_state),display_index).await?;
     println!("Caster completamente fermato.");
+    hotkey_state.screen_blanked.store(false, Ordering::SeqCst);
+    hotkey_state.paused.store(false, Ordering::SeqCst);
+    hotkey_state.terminate.store(false, Ordering::SeqCst);
     Ok(())
 }
