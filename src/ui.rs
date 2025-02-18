@@ -628,6 +628,7 @@ impl App for MyApp {
                         self.handle_selection(ctx, image_rect);
                     }
                 });
+<<<<<<< Updated upstream
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
                 egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0,0,0,20))).show(ctx, |ui| {
@@ -639,11 +640,34 @@ impl App for MyApp {
             egui::Window::new("Toolbar")
                 .auto_sized()
                 .title_bar(false)
+=======
+        }  else if self.caster_running.load(Ordering::SeqCst) { //se il casting è avviato rendo la finestra trasparente
+
+            self.set_fullscreen_transparent(ctx);
+            egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::TRANSPARENT)).show(ctx, |ui| {
+                self.display_error(ui);
+                ui.label("Casting in corso...");
+                self.handle_annotations(ui);
+            });
+            // Qui disegni la tua toolbar
+            let mut toolbar_open = true;
+            if toolbar_open {
+                egui::Window::new("Toolbar")
+                    .fixed_size(egui::Vec2::new(250.0, 40.0))
+                    .title_bar(false)
+>>>>>>> Stashed changes
                     .resizable(false)
-                    .open(&mut true)
                     .show(ctx, |ui| {
-                        ui.label("Toolbar");
+                        ui.horizontal(|ui| {
+                            ui.label("Toolbar");
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("⏹").clicked() {
+                                    toolbar_open = false;
+                                }
+                            });
+                        });
                         self.show_annotation_toolbar(ui);
+<<<<<<< Updated upstream
                         if ui.add(egui::Button::new("⏹ Chiudi toolbar")).clicked() {
                             self.status_message = "Chiudendo toolbar".to_string();
                             self.toolbar_visible = false;
@@ -651,6 +675,10 @@ impl App for MyApp {
                         }
                     });
 
+=======
+                    });
+            }
+>>>>>>> Stashed changes
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.display_error(ui);
