@@ -9,7 +9,6 @@ use scrap::{Capturer, Display};
 use std::time::Duration;
 use std::thread;
 use crate::receiver::{ReceiverState, SharedFrame};
-use egui_extras::RetainedImage;
 
 #[derive(Debug, Clone)]
 enum Modality {
@@ -267,6 +266,40 @@ impl MyApp {
         }
     }
 
+    fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, color: egui::Color32) {
+        let stroke = egui::Stroke::new(2.0, color);
+
+        // Calcola la direzione e la lunghezza della freccia
+        let dir = end - start;
+        let length = dir.length();
+        if length < 5.0 {
+            return; // Evita di disegnare frecce troppo piccole
+        }
+
+        // Normalizza la direzione
+        let dir_normalized = dir / length;
+
+        // **Ingrandire la punta della freccia**
+        let arrowhead_length = 16.0; // Aumentato
+        let arrowhead_width = 10.0; // Aumentato
+
+        // Calcola la base della punta della freccia
+        let tip = end;
+        let base = end - dir_normalized * arrowhead_length;
+
+        // Calcola i punti laterali della punta
+        let perp = egui::Vec2::new(-dir_normalized.y, dir_normalized.x) * (arrowhead_width / 2.0);
+        let left = base + perp;
+        let right = base - perp;
+
+        // Disegna il corpo della freccia (senza la punta)
+        let line_end = base; // La linea finisce alla base della punta
+        painter.line_segment([start, line_end], stroke);
+
+        // Disegna la punta della freccia come triangolo
+        let points = vec![tip, left, right];
+        painter.add(egui::Shape::convex_polygon(points, color, stroke));
+    }
 
     fn capture_screenshot(&mut self, ctx: &egui::Context) {
         let display_index = match self.selected_display_index {
@@ -350,7 +383,7 @@ impl MyApp {
         ui.horizontal(|ui| {
             let mut tool_button = |ui: &mut egui::Ui, tool: AnnotationTool, icon: &str ,label: &str| {
                 let button = egui::Button::new(format!("{icon} {label}"))
-                    .min_size(egui::vec2(80.0, 40.0));
+                    .min_size(egui::vec2(40.0, 20.0));
                 let response = ui.add(button);
 
                 if response.clicked(){
@@ -460,7 +493,7 @@ impl MyApp {
                     painter.rect_stroke(*rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 Annotation::Arrow { start, end, .. } => {
-                    painter.arrow(*start, *end - *start, egui::Stroke::new(2.0, Color32::WHITE));
+                    Self::draw_arrow(&painter, *start, *end, Color32::WHITE);
                 },
                 Annotation::Text { pos, content, .. } => {
                     painter.text(
@@ -483,7 +516,7 @@ impl MyApp {
                     painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, Color32::WHITE));
                 },
                 AnnotationTool::Arrow => {
-                    painter.arrow(start, current_pos - start, egui::Stroke::new(2.0, Color32::WHITE));
+                    Self::draw_arrow(&painter, start, current_pos, Color32::WHITE);
                 },
                 AnnotationTool::Text => {
                     // Text preview not needed as we show the text edit directly
