@@ -541,7 +541,7 @@ impl MyApp {
     }
 
     fn get_shortcuts_message(&self) -> String {
-        "\nShortcuts Windows/Linux:\n\
+        "\nShortcuts\n\
         Fn + F1 --> Metti in pausa lo stream\n\
         Fn + F2--> Blank screen\n\
         ESC --> Interrompi lo stream\n"
