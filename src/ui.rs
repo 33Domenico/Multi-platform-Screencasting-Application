@@ -1,5 +1,4 @@
-use std::fmt::format;
-use eframe::{egui, App, Frame, CreationContext};
+use eframe::{egui, App, Frame};
 use crate::{caster, receiver};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock,Mutex};
 use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget, FontId};
@@ -27,6 +26,7 @@ enum AnnotationTool {
 
 
 #[derive(PartialEq, Clone)]
+#[allow(dead_code)]
 struct TextAnnotation {
     pos: Pos2,
     content: String,
@@ -57,15 +57,18 @@ impl Default for AnnotationState {
 
 
 pub enum Annotation {
+    #[allow(dead_code)]
     Rectangle {
         rect: egui::Rect,
         color: Color32,
     },
+    #[allow(dead_code)]
     Arrow {
         start: Pos2,
         end: Pos2,
         color: Color32,
     },
+    #[allow(dead_code)]
     Text {
         pos: Pos2,
         content: String,
@@ -73,7 +76,6 @@ pub enum Annotation {
         color: Color32,
     },
 }
-
 
 pub struct MyApp {
     mode: Option<Modality>,
@@ -90,18 +92,18 @@ pub struct MyApp {
     is_error: Arc<AtomicBool>,
     available_displays: Vec<DisplayInfo>,
     selected_display_index: Option<usize>,
-    start_pos_relative: Option<Pos2>,  // Per salvare la posizione di inizio relativa all'immagine
+    start_pos_relative: Option<Pos2>,
     shared_frame: Arc<Mutex<SharedFrame>>,
     stream_texture: Option<egui::TextureHandle>,
-    receiver_state: Arc<Mutex<ReceiverState>>, // Add this field
-    annotation_state: AnnotationState, // Add this field
-    annotations: Vec<Annotation>,
+    receiver_state: Arc<Mutex<ReceiverState>>,
+    annotation_state: AnnotationState,
     toolbar_visible: bool,
     paused: Arc<AtomicBool>,
     screen_blanked: Arc<AtomicBool>,
     terminate: Arc<AtomicBool>,
 }
 #[derive(Clone)]
+#[allow(dead_code)]
 struct DisplayInfo {
     name: String,
     width: usize,
@@ -130,8 +132,7 @@ impl Default for MyApp {
             shared_frame: Arc::new(Mutex::new(SharedFrame::default())),
             stream_texture: None,
             receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
-            annotation_state: AnnotationState::default(), // Initialize this field
-            annotations: Vec::new(),
+            annotation_state: AnnotationState::default(),
             toolbar_visible: false,
             paused: Arc::new(AtomicBool::new(false)),
             screen_blanked: Arc::new(AtomicBool::new(false)),
@@ -141,11 +142,7 @@ impl Default for MyApp {
 }
 
 impl MyApp {
-    pub fn new(_cc: &CreationContext<'_>) -> Self {
-        let mut app = Self::default();
-        app.refresh_displays();
-        app
-    }
+
     fn handle_recording_error(&self, error: String) {
         self.set_error(format!("Errore di registrazione: {}", error));
     }
@@ -161,7 +158,6 @@ impl MyApp {
                 });
             }
         }
-        // Se c'è solo un display, selezionalo automaticamente
         if self.available_displays.len() == 1 {
             self.selected_display_index = Some(0);
         }
@@ -196,7 +192,6 @@ impl MyApp {
 
             if let (Some(current_pos), pressed, released) = response {
 
-                // Add safety checks for the image_rect dimensions
                 if image_rect.width() <= 0.0 || image_rect.height() <= 0.0 {
                     self.selecting_area = false;
                     self.set_error("Invalid display dimensions".to_string());
@@ -209,7 +204,6 @@ impl MyApp {
                 );
 
                 if pressed && self.start_pos.is_none() {
-                    // Add validation for the starting position
                     if clamped_pos.x.is_finite() && clamped_pos.y.is_finite() {
                         self.start_pos = Some(clamped_pos);
                         self.start_pos_relative = Some(Pos2::new(
@@ -219,7 +213,6 @@ impl MyApp {
                     }
                 } else if released && self.start_pos.is_some() {
                     if let Some(start_relative) = self.start_pos_relative {
-                        // Validate relative coordinates
                         let end_relative = Pos2::new(
                             ((clamped_pos.x - image_rect.min.x) / image_rect.width()).clamp(0.0, 1.0),
                             ((clamped_pos.y - image_rect.min.y) / image_rect.height()).clamp(0.0, 1.0)
@@ -229,13 +222,10 @@ impl MyApp {
                                 if let Some(display) = displays.get(display_index) {
                                     let screen_width = display.width() as f32;
                                     let screen_height = display.height() as f32;
-
-                                    // Ensure we're creating a valid rectangle
                                     let min_x = (start_relative.x.min(end_relative.x) * screen_width).round();
                                     let min_y = (start_relative.y.min(end_relative.y) * screen_height).round();
                                     let max_x = (start_relative.x.max(end_relative.x) * screen_width).round();
                                     let max_y = (start_relative.y.max(end_relative.y) * screen_height).round();
-                                    // Additional validation before creating the rectangle
                                     if min_x < max_x && min_y < max_y {
                                         self.selected_area = Some(Rect::from_min_max(
                                             Pos2::new(min_x, min_y),
@@ -269,34 +259,26 @@ impl MyApp {
     fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, color: egui::Color32) {
         let stroke = egui::Stroke::new(2.0, color);
 
-        // Calcola la direzione e la lunghezza della freccia
         let dir = end - start;
         let length = dir.length();
         if length < 5.0 {
-            return; // Evita di disegnare frecce troppo piccole
+            return;
         }
 
-        // Normalizza la direzione
         let dir_normalized = dir / length;
 
-        // **Ingrandire la punta della freccia**
-        let arrowhead_length = 16.0; // Aumentato
-        let arrowhead_width = 10.0; // Aumentato
-
-        // Calcola la base della punta della freccia
+        let arrowhead_length = 16.0;
+        let arrowhead_width = 10.0;
         let tip = end;
         let base = end - dir_normalized * arrowhead_length;
 
-        // Calcola i punti laterali della punta
         let perp = egui::Vec2::new(-dir_normalized.y, dir_normalized.x) * (arrowhead_width / 2.0);
         let left = base + perp;
         let right = base - perp;
 
-        // Disegna il corpo della freccia (senza la punta)
-        let line_end = base; // La linea finisce alla base della punta
+        let line_end = base;
         painter.line_segment([start, line_end], stroke);
 
-        // Disegna la punta della freccia come triangolo
         let points = vec![tip, left, right];
         painter.add(egui::Shape::convex_polygon(points, color, stroke));
     }
@@ -323,7 +305,6 @@ impl MyApp {
             return;
         }
 
-        // Ottieni il display selezionato
         let target_display = displays.into_iter().nth(display_index).unwrap();
         let width= target_display.width();
         let height =target_display.height();
@@ -350,13 +331,11 @@ impl MyApp {
             }
         };
 
-        // Crea il buffer dell'immagine con le dimensioni del display selezionato
         let mut img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(
            width as u32,
            height as u32
         );
 
-        // Converti i pixel dal formato BGRA a RGBA
         for (i, pixel) in img_buffer.pixels_mut().enumerate() {
             let idx = i * 4;
             if idx + 3 < frame.len() {
@@ -364,7 +343,6 @@ impl MyApp {
             }
         }
 
-        // Converti l'immagine per egui
         let color_image = egui::ColorImage::from_rgba_unmultiplied(
             [width, height],
             &img_buffer.into_raw(),
@@ -375,7 +353,6 @@ impl MyApp {
             color_image,
             egui::TextureOptions::LINEAR,
         ));
-        // Imposta la modalità fullscreen
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
     }
@@ -445,18 +422,15 @@ impl MyApp {
 
                         },
                         AnnotationTool::Text => {
-                            // Non resettare lo stato per il text tool
                         },
                         _ => {}
                     }
                 }
             } else if mouse_pressed {
-                // Aggiorna la posizione finale durante il trascinamento
                 self.annotation_state.end_pos = Some(pos);
             }
         }
 
-        // Handle text editing prima del painter
         if let Some(start) = self.annotation_state.start_pos {
             if self.annotation_state.active_tool == AnnotationTool::Text {
                 if let Some(editing_text) = &mut self.annotation_state.editing_text {
@@ -507,8 +481,6 @@ impl MyApp {
             }
         }
 
-
-        // Draw current annotation preview
         if let (Some(start), Some(current_pos)) = (self.annotation_state.start_pos, pointer_pos) {
             match self.annotation_state.active_tool {
                 AnnotationTool::Rectangle => {
@@ -519,7 +491,6 @@ impl MyApp {
                     Self::draw_arrow(&painter, start, current_pos, Color32::WHITE);
                 },
                 AnnotationTool::Text => {
-                    // Text preview not needed as we show the text edit directly
                 },
                 _ => {}
             }
@@ -536,12 +507,12 @@ impl MyApp {
 
 
     fn set_fullscreen_transparent(&self, ctx: &egui::Context) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true)); // Imposta la trasparenza
+        ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
 
     fn get_shortcuts_message(&self) -> String {
-        "\nShortcuts\n\
+        "\nShortcuts Windows/Linux:\n\
         Fn + F1 --> Metti in pausa lo stream\n\
         Fn + F2--> Blank screen\n\
         ESC --> Interrompi lo stream\n"
@@ -552,7 +523,7 @@ impl MyApp {
 
 impl App for MyApp {
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         if self.selected_display_index==None{
             self.refresh_displays()
         }
@@ -564,7 +535,6 @@ impl App for MyApp {
                     let mut image_rect = egui::Rect::NOTHING;
 
                     if let Some(texture) = &self.screenshot {
-                        // Calcola le dimensioni disponibili mantenendo l'aspect ratio
                         let available_size = ui.available_size();
                         let texture_size = texture.size();
                         let texture_aspect = texture_size[0] as f32 / texture_size[1] as f32;
@@ -575,8 +545,6 @@ impl App for MyApp {
                         } else {
                             egui::vec2(available_size.y * texture_aspect, available_size.y)
                         };
-
-                        // Calcola il rettangolo centrato per l'immagine
                         let available_rect = ui.available_rect_before_wrap();
                         image_rect = egui::Rect::from_center_size(
                             available_rect.center(),
@@ -590,7 +558,6 @@ impl App for MyApp {
                             image.ui(ui);
                         });
 
-                        // Disegna il rettangolo di selezione
                         if let Some(start) = self.start_pos {
                             if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
                                 let clamped_current = Pos2::new(
@@ -604,7 +571,6 @@ impl App for MyApp {
                             }
                         }
                     }
-                    // Mostra il messaggio di istruzione
                     let screen_rect = ui.max_rect();
                     let center_x = screen_rect.center().x;
                     let center_y = screen_rect.center().y;
@@ -619,8 +585,7 @@ impl App for MyApp {
                         });
                     });
 
-                    // Gestisci la selezione con il rettangolo dell'immagine
-                    if self.screenshot.is_some() { // Add this condition
+                    if self.screenshot.is_some() {
                         self.handle_selection(ctx, image_rect);
                     }
                 });
@@ -632,7 +597,6 @@ impl App for MyApp {
                     ui.label("Casting in corso...");
                     self.handle_annotations(ui);
                 });
-                // Qui disegni la tua toolbar
                 egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
                     .title_bar(false)
                     .resizable(false)
@@ -700,7 +664,6 @@ impl App for MyApp {
                                 }
                             });
 
-                            // Visualizza l'area selezionata se presente
                             if let Some(area) = self.selected_area {
                                 ui.label(format!(
                                     "Area selezionata: ({}, {}) - ({}, {})",
@@ -714,7 +677,6 @@ impl App for MyApp {
                             if !self.caster_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Caster".to_string();
 
-                                // Disabilita il pulsante "Seleziona area" se non è stato selezionato uno schermo
                                 let select_area_button = ui.add_enabled(
                                     self.selected_display_index.is_some(),
                                     egui::Button::new("Seleziona area")
@@ -769,28 +731,23 @@ impl App for MyApp {
                                     self.caster_running.store(false, Ordering::SeqCst);
                                     self.status_message = "Caster interrotto.".to_string();
                                 }
-                                // Mostra scritta gialla per pausa
                                 if self.paused.load(Ordering::SeqCst) {
                                         ui.label(
                                             egui::RichText::new("PAUSA")
-                                                .size(24.0) // Dimensione del testo
-                                                .color(Color32::YELLOW) // Colore giallo
-                                                .strong(), // Testo in grassetto
+                                                .size(24.0)
+                                                .color(Color32::YELLOW)
+                                                .strong(),
                                         );
                                 }
 
-                                // Mostra scritta gialla per blank screen
                                 if self.screen_blanked.load(Ordering::SeqCst) {
                                         ui.label(
                                             egui::RichText::new("BLANK SCREEN")
-                                                .size(24.0) // Dimensione del testo
-                                                .color(Color32::YELLOW) // Colore giallo
-                                                .strong(), // Testo in grassetto
+                                                .size(24.0)
+                                                .color(Color32::YELLOW)
+                                                .strong(),
                                         );
                                 }
-
-
-
                             }
                         }
                         Modality::Receiver => {
@@ -897,49 +854,33 @@ impl App for MyApp {
                                     }
                                 }
 
-                                // Mostra un indicatore di registrazione quando è attiva
                                 if let Ok(receiver_state) = self.receiver_state.lock() {
                                     if receiver_state.recording {
                                         ui.horizontal(|ui| {
                                             ui.label(egui::RichText::new("⚫ REC")
                                                 .color(Color32::from_rgb(255, 0, 0))
                                                 .strong());
-
-                                            // Mostra il path di output
                                             ui.label(format!("Salvando in: {}", receiver_state.output_dir));
                                         });
                                     }
                                 }
-
-                                // Mostra il frame
                                 if ui.button("Stop").clicked() {
                                     self.status_message = "Interrompendo il receiver...".to_string();
                                     self.stop_signal.store(true, Ordering::SeqCst);
                                     self.receiver_running.store(false,Ordering::SeqCst);
                                 }
-                                // Mostra il frame adattandolo alla finestra
                                 if let Some(texture) = &self.stream_texture {
-                                    // Ottieni le dimensioni disponibili nell'UI
                                     let available_size = ui.available_size();
-
-                                    // Ottieni le dimensioni originali della texture
                                     let texture_size = texture.size_vec2();
-
-                                    // Calcola il rapporto di aspetto della texture e dello spazio disponibile
                                     let texture_aspect = texture_size.x / texture_size.y;
                                     let available_aspect = available_size.x / available_size.y;
-
-                                    // Calcola le dimensioni finali mantenendo il rapporto di aspetto
                                     let display_size = if texture_aspect > available_aspect {
-                                        // La texture è più larga rispetto allo spazio disponibile
                                         egui::vec2(available_size.x, available_size.x / texture_aspect)
                                     } else {
-                                        // La texture è più alta rispetto allo spazio disponibile
                                         egui::vec2(available_size.y * texture_aspect, available_size.y)
                                     };
                                     let image = Image::from_texture(texture)
                                         .fit_to_exact_size(display_size);
-                                    // Crea e mostra l'immagine ridimensionata
                                     image.ui(ui);
                                 }
                                 ctx.request_repaint();

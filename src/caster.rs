@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use eframe::epaint::Rect;
-use scrap::{Capturer, Display, Frame};
+use scrap::{Capturer, Display};
 use image::{ImageBuffer, RgbImage, DynamicImage};
 use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration};
@@ -18,9 +18,6 @@ struct HotkeyState {
 }
 
 
-
-
-
 fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
     let device_state = DeviceState::new();
     let mut last_keys = Vec::new();
@@ -29,7 +26,7 @@ fn handle_hotkeys(hotkey_state: Arc<HotkeyState>) {
         let keys: Vec<Keycode> = device_state.get_keys();
 
         if keys != last_keys {
-            // Supporto Windows/Linux shortcuts
+
             if keys.contains(&Keycode::F1) {
                 hotkey_state.paused.fetch_xor(true, Ordering::SeqCst);
                 println!("Trasmissione {}.", if hotkey_state.paused.load(Ordering::SeqCst) { "paused" } else { "resumed" });
@@ -54,7 +51,7 @@ async fn compress_frame_to_jpeg(frame: &[u8], width: usize, height: usize) -> Re
     let mut img_buffer: RgbImage = ImageBuffer::new(width as u32, height as u32);
     for (i, pixel) in img_buffer.pixels_mut().enumerate() {
         let idx = i * 4;
-        *pixel = image::Rgb([frame[idx + 2], frame[idx + 1], frame[idx]]); // BGRA -> RGB
+        *pixel = image::Rgb([frame[idx + 2], frame[idx + 1], frame[idx]]);
     }
     let img = DynamicImage::ImageRgb8(img_buffer);
     let mut jpeg_data = Vec::new();
@@ -63,28 +60,6 @@ async fn compress_frame_to_jpeg(frame: &[u8], width: usize, height: usize) -> Re
         encoder.encode_image(&img)?;
     }
     Ok(jpeg_data)
-}
-
-fn crop_frame_to_area(
-    frame: &[u8],
-    frame_width: usize,
-    frame_height: usize,
-    area: Rect
-) -> Vec<u8> {
-    let (x0, y0) = (area.min.x as usize, area.min.y as usize);
-    let (x1, y1) = (area.max.x as usize, area.max.y as usize);
-
-    let cropped_width = x1 - x0;
-    let cropped_height = y1 - y0;
-
-    let mut cropped_frame = Vec::new();
-    for y in y0..y1 {
-        let start_idx = (y * frame_width + x0) * 4;  // BGRA
-        let end_idx = start_idx + (cropped_width * 4);
-        cropped_frame.extend_from_slice(&frame[start_idx..end_idx]);
-    }
-
-    cropped_frame
 }
 
 async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>, hotkey_state: Arc<HotkeyState>,display_index: usize) -> Result<(), Box<dyn Error>> {
@@ -120,13 +95,13 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
                     }
                     (cropped_frame, end_x - start_x, end_y - start_y)
                 } else {
-                    (frame.to_vec(), width, height)  // No cropping if no area is selected
+                    (frame.to_vec(), width, height)
                 };
 
                 let (cropped_frame, cropped_width, cropped_height) = selected_frame;
 
                 if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
-                    // Invia un frame nero quando lo schermo è blankato
+
                     let blank_frame = vec![0; cropped_width * cropped_height * 4];
                     let jpeg_frame = compress_frame_to_jpeg(&blank_frame, cropped_width, cropped_height).await?;
                     let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
@@ -144,7 +119,6 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
                 println!("Frame compresso e inviato.");
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // Nessun frame disponibile, aspetta e riprova
             }
             Err(e) => {
                 eprintln!("Errore nella cattura del frame: {:?}", e);

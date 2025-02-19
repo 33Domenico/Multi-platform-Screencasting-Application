@@ -6,7 +6,7 @@ use tokio::time::{sleep, Duration, timeout};
 use std::fs;
 use std::path::Path;
 use chrono::Local;
-use std::io::{self, Write};
+use std::io::{self};
 use image::RgbaImage;
 use std::process::Command;
 use std::time::{ Instant};
@@ -75,7 +75,6 @@ impl ReceiverState {
             return Ok(());
         }
 
-        // Validate frame dimensions
         let (width, height) = img.dimensions();
         if width < 10 || height < 10 {
             return Err(io::Error::new(
@@ -84,14 +83,11 @@ impl ReceiverState {
             ));
         }
 
-
-        // Store frame dimensions on first frame
         if self.frame_width.is_none() {
             self.frame_width = Some(width);
             self.frame_height = Some(height);
         }
 
-        // Ensure consistent frame dimensions
         if Some(width) != self.frame_width || Some(height) != self.frame_height {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -99,7 +95,6 @@ impl ReceiverState {
             ));
         }
 
-        // Save frame as PNG
         let frame_path = Path::new(&self.output_dir)
             .join("frames")
             .join(format!("frame_{:06}.png", self.frame_count));
@@ -134,13 +129,10 @@ impl ReceiverState {
             ));
         }
 
-        // Calcola il framerate effettivo
         let duration = self.last_frame_time.unwrap().duration_since(self.start_time.unwrap())- self.paused_duration;
         self.framerate = self.frame_count as f64 / duration.as_secs_f64();
         println!("Framerate effettivo: {:.2} fps", self.framerate );
 
-
-        // Save metadata
         let metadata = format!(
             "frames: {}\nfps: {:.2}\nwidth: {}\nheight: {}\nstart_time: {}\n",
             self.frame_count,
@@ -151,10 +143,8 @@ impl ReceiverState {
         );
 
         fs::write(Path::new(&self.output_dir).join("metadata.txt"), metadata)?;
-        // Convert to video
         match self.convert_to_mp4() {
             Ok(_) => {
-                // Elimina tutti i frame una volta convertiti
                 self.delete_frames()?;
             }
             Err(e) => {
@@ -170,7 +160,6 @@ impl ReceiverState {
     }
 
     fn convert_to_mp4(&mut self) -> io::Result<()> {
-        // Check if ffmpeg is available
         if !Command::new("ffmpeg").arg("-version").output().is_ok() {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -189,12 +178,10 @@ impl ReceiverState {
             .to_string_lossy()
             .to_string();
 
-        // Build ffmpeg command with scale filter to ensure even dimensions
         let output = Command::new("ffmpeg")
             .args([
-                "-framerate", &format!("{:.2}", self.framerate ),  // Input framerate
+                "-framerate", &format!("{:.2}", self.framerate ),
                 "-i", &frames_pattern,
-                // Scale width and height to even numbers while maintaining aspect ratio
                 "-vf", "scale=ceil(iw/2)*2:ceil(ih/2)*2",
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
@@ -220,7 +207,6 @@ impl ReceiverState {
         Ok(())
     }
 }
-// Struttura per condividere il frame tra i thread
 pub struct SharedFrame {
     pub buffer: Vec<u8>,
     pub width: usize,
@@ -274,7 +260,6 @@ pub async fn receive_frame(
                 let img = img.to_rgba8();
                 let (width, height) = img.dimensions();
 
-                // Aggiorna il frame condiviso
                 if let Ok(mut shared) = shared_frame.lock() {
                     shared.buffer = img.to_vec();
                     shared.width = width as usize;
@@ -282,7 +267,6 @@ pub async fn receive_frame(
                     shared.new_frame = true;
                 }
 
-                // Salva il frame se la registrazione è attiva
                 if let Ok(mut receiver_state)=receiver_state.lock(){
                     receiver_state.save_frame(&img)?;
                 }
@@ -293,7 +277,6 @@ pub async fn receive_frame(
 
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 if frame_size == 0 {
-                    // Caster ha chiuso la trasmissione
                     if let Ok(mut receiver_state) = receiver_state.lock() {
                         if receiver_state.recording {
                             receiver_state.stop_recording()?;
@@ -332,7 +315,6 @@ pub async fn receive_frame(
 
     }
 
-    // Se il receiver viene fermato manualmente, salva la registrazione se attiva
     if let Ok(mut receiver_state) = receiver_state.lock() {
         if receiver_state.recording {
             receiver_state.stop_recording()?;

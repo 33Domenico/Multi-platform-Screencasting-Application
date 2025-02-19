@@ -1,7 +1,5 @@
 use std::error::Error;
 use std::env;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use eframe::egui::ViewportBuilder;
 
 mod caster;
@@ -10,7 +8,6 @@ mod ui;
 
 use ui::MyApp;
 
-use eframe::epaint::Rect;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
