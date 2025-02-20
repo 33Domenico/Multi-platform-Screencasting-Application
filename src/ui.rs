@@ -553,10 +553,10 @@ impl App for MyApp {
                         let image = Image::from_texture(texture)
                             .fit_to_exact_size(size)
                             .tint(Color32::from_rgba_unmultiplied(110, 110, 110, 200));
-
-                        ui.allocate_ui_at_rect(image_rect, |ui| {
+                        ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), image_rect), |ui| {
                             image.ui(ui);
                         });
+
 
                         if let Some(start) = self.start_pos {
                             if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
