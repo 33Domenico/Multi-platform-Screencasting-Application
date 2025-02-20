@@ -380,13 +380,14 @@ impl MyApp {
             tool_button(ui, AnnotationTool::Text, "📝", "Testo");
             // Clear button
             let clear_button = egui::Button::new("❌ Cancella Tutto")
-                .min_size(egui::vec2(100.0, 40.0));
+                .min_size(egui::vec2(40.0, 20.0));
 
             if ui.add(clear_button).on_hover_text("Elimina tutte le annotazioni").clicked(){
                 self.annotation_state.annotations.clear();
             }
         });
     }
+
 
     fn handle_annotations(&mut self, ui: &mut egui::Ui) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos());
@@ -524,7 +525,9 @@ impl MyApp {
 }
 
 impl App for MyApp {
-
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         if self.selected_display_index==None{
             self.refresh_displays()
@@ -532,7 +535,7 @@ impl App for MyApp {
 
         if self.selecting_area {
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 0)))
+                .frame(egui::Frame::none().fill(Color32::TRANSPARENT))
                 .show(ctx, |ui| {
                     let mut image_rect = egui::Rect::NOTHING;
 
@@ -558,7 +561,6 @@ impl App for MyApp {
                         ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), image_rect), |ui| {
                             image.ui(ui);
                         });
-
 
                         if let Some(start) = self.start_pos {
                             if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
@@ -593,25 +595,32 @@ impl App for MyApp {
                 });
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
-                egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_rgba_unmultiplied(0, 0, 0, 20))).show(ctx, |ui| {
-
-                    self.display_error(ui);
-                    ui.label("Casting in corso...");
-                    self.handle_annotations(ui);
-                });
-                egui::Window::new("Toolbar").fixed_size(egui::Vec2::new(250.0, 40.0))
-                    .title_bar(false)
-                    .resizable(false)
-                    .open(&mut true)
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(0, 0, 0, 0)))
                     .show(ctx, |ui| {
-                        ui.label("Toolbar");
+                        self.handle_annotations(ui);
+                    });
+                egui::Window::new("")
+                .fixed_size(egui::Vec2::new(300.0, 45.0))
+                .collapsible(false)
+                .title_bar(false)
+                .resizable(false)
+                .frame(egui::Frame::window(&ctx.style())
+                    .fill(Color32::from_rgba_unmultiplied(50, 50, 50, 200))
+                    .rounding(5.0)
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60))))
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 10.0))
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
                         self.show_annotation_toolbar(ui);
-                        if ui.button("⏹ Chiudi toolbar").clicked() {
-                            self.status_message = "Chiudendo toolbar".to_string();
+                        ui.separator();
+                        if ui.button("❌").clicked() {
                             self.toolbar_visible = false;
                             self.save_original_window_state(ctx);
                         }
                     });
+                });
 
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
