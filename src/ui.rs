@@ -1,6 +1,6 @@
 use eframe::{egui, App, Frame};
 use crate::{caster, receiver};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock,Mutex};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, RwLock};
 use eframe::egui::{Rect, Pos2, Color32, UiBuilder, Image, Widget, FontId};
 use tokio::runtime::Runtime;
 use image::{ImageBuffer, Rgba};
@@ -93,9 +93,9 @@ pub struct MyApp {
     available_displays: Vec<DisplayInfo>,
     selected_display_index: Option<usize>,
     start_pos_relative: Option<Pos2>,
-    shared_frame: Arc<Mutex<SharedFrame>>,
+    shared_frame: Arc<RwLock<SharedFrame>>,
     stream_texture: Option<egui::TextureHandle>,
-    receiver_state: Arc<Mutex<ReceiverState>>,
+    receiver_state: Arc<RwLock<ReceiverState>>,
     annotation_state: AnnotationState,
     toolbar_visible: bool,
     paused: Arc<AtomicBool>,
@@ -130,9 +130,9 @@ impl Default for MyApp {
             available_displays: Vec::new(),
             selected_display_index: None,
             start_pos_relative: None,
-            shared_frame: Arc::new(Mutex::new(SharedFrame::default())),
+            shared_frame: Arc::new(RwLock::new(SharedFrame::default())),
             stream_texture: None,
-            receiver_state: Arc::new(Mutex::new(ReceiverState::new())),
+            receiver_state: Arc::new(RwLock::new(ReceiverState::new())),
             annotation_state: AnnotationState::default(),
             toolbar_visible: false,
             paused: Arc::new(AtomicBool::new(false)),
@@ -792,7 +792,7 @@ impl App for MyApp {
                                 }
                             } else if self.connected_to_caster.load(Ordering::SeqCst){
                                 ui.horizontal(|ui| {
-                                    if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).lock() {
+                                    if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).write() {
 
                                         if receiver_state.recording {
                                             if ui.add(egui::Button::new("⏹ Arresta Registrazione")
@@ -842,7 +842,7 @@ impl App for MyApp {
                                 });
 
 
-                                if let Ok(mut shared) = self.shared_frame.lock() {
+                                if let Ok(mut shared) = self.shared_frame.write() {
                                     if shared.new_frame {
                                         let color_image = egui::ColorImage::from_rgba_unmultiplied(
                                             [shared.width, shared.height],
@@ -858,7 +858,7 @@ impl App for MyApp {
                                     }
                                 }
 
-                                if let Ok(receiver_state) = self.receiver_state.lock() {
+                                if let Ok(receiver_state) = self.receiver_state.read() {
                                     if receiver_state.recording {
                                         ui.horizontal(|ui| {
                                             ui.label(egui::RichText::new("⚫ REC")
@@ -884,7 +884,7 @@ impl App for MyApp {
                                         egui::vec2(available_size.y * texture_aspect, available_size.y)
                                     };
 
-                                    if let Ok(receiver_state) = self.receiver_state.lock() {
+                                    if let Ok(receiver_state) = self.receiver_state.read() {
                                         if receiver_state.is_paused {
                                                 ui.label(
                                                     egui::RichText::new("⏸ STREAM IN PAUSA")

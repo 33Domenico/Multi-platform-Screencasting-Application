@@ -1,7 +1,7 @@
 use tokio::net::TcpStream;
 use tokio::io::AsyncReadExt;
 use image::ImageReader;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering},RwLock};
 use tokio::time::{sleep, Duration, timeout};
 use std::fs;
 use std::path::Path;
@@ -232,8 +232,8 @@ impl Default for SharedFrame {
 pub async fn receive_frame(
     addr: &str,
     stop_signal: Arc<AtomicBool>,
-    shared_frame: Arc<Mutex<SharedFrame>>,
-    receiver_state: Arc<Mutex<ReceiverState>>,
+    shared_frame: Arc<RwLock<SharedFrame>>,
+    receiver_state: Arc<RwLock<ReceiverState>>,
     connected_to_caster: Arc<AtomicBool>
 ) -> io::Result<()> {
 
@@ -264,7 +264,7 @@ pub async fn receive_frame(
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
-                if let Ok(mut state) = receiver_state.lock() {
+                if let Ok(mut state) = receiver_state.write() {
                     state.is_paused = false;
                     state.last_frame_received = Some(Instant::now());
                 }
@@ -286,14 +286,14 @@ pub async fn receive_frame(
                 let img = img.to_rgba8();
                 let (width, height) = img.dimensions();
 
-                if let Ok(mut shared) = shared_frame.lock() {
+                if let Ok(mut shared) = shared_frame.write() {
                     shared.buffer = img.to_vec();
                     shared.width = width as usize;
                     shared.height = height as usize;
                     shared.new_frame = true;
                 }
 
-                if let Ok(mut receiver_state)=receiver_state.lock(){
+                if let Ok(mut receiver_state)=receiver_state.write(){
                     receiver_state.save_frame(&img)?;
                 }
             }
@@ -303,7 +303,7 @@ pub async fn receive_frame(
 
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 if frame_size == 0 {
-                    if let Ok(mut receiver_state) = receiver_state.lock() {
+                    if let Ok(mut receiver_state) = receiver_state.write() {
                         if receiver_state.recording {
                             receiver_state.stop_recording()?;
                         }
@@ -316,7 +316,7 @@ pub async fn receive_frame(
 
             Err(_) => {
                 println!("Timeout scaduto, nessun frame ricevuto.");
-                if let Ok(mut state) = receiver_state.lock() {
+                if let Ok(mut state) = receiver_state.write() {
                     if !state.is_paused {
                         state.is_paused = true;
                         println!("Stream in pausa");
@@ -324,7 +324,7 @@ pub async fn receive_frame(
                 }
 
                 if !no_frame_received {
-                    if let Ok(mut receiver_state) = receiver_state.lock() {
+                    if let Ok(mut receiver_state) = receiver_state.write() {
                         if receiver_state.pause_start_time.is_none() {
                             receiver_state.pause_start_time = Some(Instant::now());
                         }
@@ -335,7 +335,7 @@ pub async fn receive_frame(
             }
         }
         if no_frame_received {
-            if let Ok(mut receiver_state) = receiver_state.lock() {
+            if let Ok(mut receiver_state) = receiver_state.write() {
                 if let Some(pause_start_time) = receiver_state.pause_start_time {
              receiver_state.paused_duration += pause_start_time.elapsed();
             receiver_state.pause_start_time = None;
@@ -348,7 +348,7 @@ pub async fn receive_frame(
 
     }
 
-    if let Ok(mut receiver_state) = receiver_state.lock() {
+    if let Ok(mut receiver_state) = receiver_state.write() {
         if receiver_state.recording {
             receiver_state.stop_recording()?;
         }
