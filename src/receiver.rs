@@ -233,8 +233,25 @@ pub async fn receive_frame(
     addr: &str,
     stop_signal: Arc<AtomicBool>,
     shared_frame: Arc<Mutex<SharedFrame>>,
-    receiver_state: Arc<Mutex<ReceiverState>>
+    receiver_state: Arc<Mutex<ReceiverState>>,
+    connected_to_caster: Arc<AtomicBool>
 ) -> io::Result<()> {
+
+    let read_timeout = Duration::from_secs(2);
+    match timeout(read_timeout, TcpStream::connect(addr)).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            eprintln!("Errore di connessione al caster: {}", e);
+            return Err(e);
+        }
+        Err(_) => {
+            eprintln!("Timeout di connessione al caster scaduto.");
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "Timeout di connessione al caster scaduto, controlla l'indirizzo IP inserito e riprova."));
+        }
+    };
+
+    connected_to_caster.store(true, Ordering::SeqCst);
+
     let mut stream = TcpStream::connect(addr).await?;
     let read_timeout = Duration::from_secs(2);
     let mut no_frame_received = false;

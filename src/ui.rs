@@ -101,6 +101,7 @@ pub struct MyApp {
     paused: Arc<AtomicBool>,
     screen_blanked: Arc<AtomicBool>,
     terminate: Arc<AtomicBool>,
+    connected_to_caster: Arc<AtomicBool>,
 }
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -136,7 +137,8 @@ impl Default for MyApp {
             toolbar_visible: false,
             paused: Arc::new(AtomicBool::new(false)),
             screen_blanked: Arc::new(AtomicBool::new(false)),
-            terminate: Arc::new(AtomicBool::new(false))
+            terminate: Arc::new(AtomicBool::new(false)),
+            connected_to_caster: Arc::new(AtomicBool::new(false))
         }
     }
 }
@@ -773,10 +775,11 @@ impl App for MyApp {
                                     let is_error = self.is_error.clone();
                                     let is_running = self.receiver_running.clone();
                                     let shared_frame = self.shared_frame.clone();
+                                    let connected_to_caster = self.connected_to_caster.clone();
 
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame,receiver_state).await {
+                                            if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame,receiver_state, connected_to_caster).await {
                                                 let error = format!("Errore nel receiver: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
@@ -787,7 +790,7 @@ impl App for MyApp {
                                         ctx.request_repaint();
                                     });
                                 }
-                            } else {
+                            } else if self.connected_to_caster.load(Ordering::SeqCst){
                                 ui.horizontal(|ui| {
                                     if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).lock() {
 
