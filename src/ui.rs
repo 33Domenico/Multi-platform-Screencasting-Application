@@ -512,7 +512,7 @@ impl MyApp {
     }
 
     fn get_shortcuts_message(&self) -> String {
-        "\nShortcuts Windows/Linux:\n\
+        "\nShortcuts:\n\
         Fn + F1 --> Metti in pausa lo stream\n\
         Fn + F2--> Blank screen\n\
         ESC --> Interrompi lo stream\n"
@@ -640,7 +640,8 @@ impl App for MyApp {
                         Modality::Caster => {
                             ui.horizontal(|ui| {
                                 ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
-                                ui.text_edit_singleline(&mut self.caster_address);
+                                let text_edit = egui::TextEdit::singleline(&mut self.caster_address);
+                                ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), text_edit);
                             });
                             ui.horizontal(|ui| {
                                 ui.label("Seleziona Monitor:");
@@ -753,9 +754,9 @@ impl App for MyApp {
                         Modality::Receiver => {
                             ui.horizontal(|ui| {
                                 ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
-                                ui.text_edit_singleline(&mut self.caster_address);
+                                let text_edit = egui::TextEdit::singleline(&mut self.caster_address);
+                                ui.add_enabled(!self.receiver_running.load(Ordering::SeqCst), text_edit);
                             });
-
 
                             if !self.receiver_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Receiver".to_string();
