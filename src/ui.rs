@@ -785,7 +785,11 @@ impl App for MyApp {
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame,receiver_state, connected_to_caster).await {
-                                                let error = format!("Errore nel receiver: {}", e);
+                                                let error = if e.to_string() == "Il caster ha chiuso la trasmissione." {
+                                                    "Il caster ha chiuso la trasmissione.".to_string()
+                                                } else {
+                                                    format!("Errore nel receiver: {}", e)
+                                                };
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
