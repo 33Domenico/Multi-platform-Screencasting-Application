@@ -654,15 +654,20 @@ impl App for MyApp {
                                     })
                                     .show_ui(ui, |ui| {
                                         for (index, display) in self.available_displays.iter().enumerate() {
-                                            ui.selectable_value(
+                                            let response = ui.selectable_value(
                                                 &mut self.selected_display_index,
                                                 Some(index),
                                                 &display.name,
                                             );
+
+                                            if response.clicked() {
+                                                self.selected_area = None;
+                                            }
                                         }
                                     });
 
                                 if ui.button("🔄").clicked() {
+                                    self.selected_area = None;
                                     self.refresh_displays();
                                 }
                             });
