@@ -23,6 +23,8 @@ pub struct ReceiverState {
     paused_duration: Duration,
     pause_start_time: Option<Instant>,
     pub framerate: f64,
+    pub is_paused: bool,
+    last_frame_received: Option<Instant>,
 }
 
 impl ReceiverState {
@@ -38,7 +40,9 @@ impl ReceiverState {
             start_time: None,
             paused_duration: Duration::new(0, 0),
             pause_start_time: None,
-            framerate: 30.0
+            framerate: 30.0,
+            is_paused: false,
+            last_frame_received: None,
         }
     }
     fn reset_parameter(&mut self){
@@ -243,6 +247,11 @@ pub async fn receive_frame(
                 let frame_size = u32::from_be_bytes(size_buf) as usize;
                 println!("Ricevuto frame di dimensione: {} byte", frame_size);
 
+                if let Ok(mut state) = receiver_state.lock() {
+                    state.is_paused = false;
+                    state.last_frame_received = Some(Instant::now());
+                }
+
                 if frame_size > 10_000_000 {
                     eprintln!("Frame troppo grande: {} byte", frame_size);
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Frame troppo grande"));
@@ -290,6 +299,13 @@ pub async fn receive_frame(
 
             Err(_) => {
                 println!("Timeout scaduto, nessun frame ricevuto.");
+                if let Ok(mut state) = receiver_state.lock() {
+                    if !state.is_paused {
+                        state.is_paused = true;
+                        println!("Stream in pausa");
+                    }
+                }
+
                 if !no_frame_received {
                     if let Ok(mut receiver_state) = receiver_state.lock() {
                         if receiver_state.pause_start_time.is_none() {
@@ -303,8 +319,8 @@ pub async fn receive_frame(
         }
         if no_frame_received {
             if let Ok(mut receiver_state) = receiver_state.lock() {
-            if let Some(pause_start_time) = receiver_state.pause_start_time {
-            receiver_state.paused_duration += pause_start_time.elapsed();
+                if let Some(pause_start_time) = receiver_state.pause_start_time {
+             receiver_state.paused_duration += pause_start_time.elapsed();
             receiver_state.pause_start_time = None;
                 }
                 println!("{:?}",receiver_state.paused_duration);

@@ -880,6 +880,18 @@ impl App for MyApp {
                                     } else {
                                         egui::vec2(available_size.y * texture_aspect, available_size.y)
                                     };
+
+                                    if let Ok(receiver_state) = self.receiver_state.lock() {
+                                        if receiver_state.is_paused {
+                                                ui.label(
+                                                    egui::RichText::new("⏸ STREAM IN PAUSA")
+                                                        .size(24.0)
+                                                        .color(Color32::YELLOW)
+                                                        .strong(),
+                                                );
+                                        }
+                                    }
+
                                     let image = Image::from_texture(texture)
                                         .fit_to_exact_size(display_size);
                                     image.ui(ui);
