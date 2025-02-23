@@ -749,16 +749,30 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
-                                ui.label(self.get_shortcuts_message());
-                                if ui.button(if self.toolbar_visible {"Hide Toolbar"} else {"Show Toolbar"}).clicked() {
-                                    self.toolbar_visible = !self.toolbar_visible;
-                                }
-                                if ui.button("⏹").clicked() {
-                                    self.status_message = "Interrompendo il caster...".to_string();
-                                    self.stop_signal.store(true, Ordering::SeqCst);
-                                    self.caster_running.store(false, Ordering::SeqCst);
-                                    self.status_message = "Caster interrotto.".to_string();
-                                }
+
+                                ui.horizontal(|ui| {
+                                    if ui.button(if self.toolbar_visible {"Nascondi Toolbar"} else {"Mostra Toolbar"}).clicked() {
+                                        self.toolbar_visible = !self.toolbar_visible;
+                                    }
+                                    if ui.button(if self.paused.load(Ordering::SeqCst) { "▶ Riprendi" } else { "⏸ Pausa" }).clicked() {
+                                        let new_state = !self.paused.load(Ordering::SeqCst);
+                                        self.paused.store(new_state, Ordering::SeqCst);
+                                    }
+                                    ui.add_enabled(
+                                        !self.paused.load(Ordering::SeqCst),
+                                        egui::Button::new(if self.screen_blanked.load(Ordering::SeqCst) { "🌕 Unblank" } else { "🌑 Blank" })
+                                    ).clicked().then(|| {
+                                        let new_state = !self.screen_blanked.load(Ordering::SeqCst);
+                                        self.screen_blanked.store(new_state, Ordering::SeqCst);
+                                    });
+
+                                    if ui.button("⏹ Stop").clicked() {
+                                        self.status_message = "Interrompendo il caster...".to_string();
+                                        self.stop_signal.store(true, Ordering::SeqCst);
+                                        self.caster_running.store(false, Ordering::SeqCst);
+                                        self.status_message = "Caster interrotto.".to_string();
+                                    }
+                                });
                                 if self.paused.load(Ordering::SeqCst) {
                                         ui.label(
                                             egui::RichText::new("PAUSA")
@@ -776,6 +790,7 @@ impl App for MyApp {
                                                 .strong(),
                                         );
                                 }
+                                ui.label(self.get_shortcuts_message());
                             }
                         }
                         Modality::Receiver => {
@@ -841,31 +856,38 @@ impl App for MyApp {
                                             // Mostra stato registrazione
                                             ui.label(format!("Frame registrati: {}", receiver_state.frame_count));
                                         } else {
-                                            if ui.add(egui::Button::new("⏺ Avvia Registrazione")
-                                                .fill(Color32::from_rgb(50, 255, 50)))
-                                                .clicked()
-                                            {
-                                                match std::process::Command::new("ffmpeg").arg("-version").output() {
-                                                    Ok(_) => {
-                                                        match receiver_state.start_recording() {
-                                                            Ok(_) => {
-                                                                self.status_message = "Registrazione avviata.".to_string();
-                                                                self.clear_error();
-                                                            },
-                                                            Err(e) => {
-                                                                self.handle_recording_error(e.to_string());
+                                            ui.horizontal(|ui| {
+                                                if ui.add(egui::Button::new("⏺ Avvia Registrazione")
+                                                    .fill(Color32::from_rgb(50, 255, 50)))
+                                                    .clicked()
+                                                {
+                                                    match std::process::Command::new("ffmpeg").arg("-version").output() {
+                                                        Ok(_) => {
+                                                            match receiver_state.start_recording() {
+                                                                Ok(_) => {
+                                                                    self.status_message = "Registrazione avviata.".to_string();
+                                                                    self.clear_error();
+                                                                },
+                                                                Err(e) => {
+                                                                    self.handle_recording_error(e.to_string());
+                                                                }
                                                             }
+                                                        },
+                                                        Err(_) => {
+                                                            self.handle_recording_error(
+                                                                "FFmpeg non trovato. Installare FFmpeg per abilitare la registrazione video."
+                                                                    .to_string()
+                                                            );
                                                         }
-                                                    },
-                                                    Err(_) => {
-                                                        self.handle_recording_error(
-                                                            "FFmpeg non trovato. Installare FFmpeg per abilitare la registrazione video."
-                                                                .to_string()
-                                                        );
                                                     }
-                                                }
 
-                                            }
+                                                }
+                                                if ui.button("⏹ Stop").clicked() {
+                                                    self.status_message = "Interrompendo il receiver...".to_string();
+                                                    self.stop_signal.store(true, Ordering::SeqCst);
+                                                    self.receiver_running.store(false,Ordering::SeqCst);
+                                                }
+                                            });
                                         }
                                     }
                                 });
@@ -897,11 +919,7 @@ impl App for MyApp {
                                         });
                                     }
                                 }
-                                if ui.button("Stop").clicked() {
-                                    self.status_message = "Interrompendo il receiver...".to_string();
-                                    self.stop_signal.store(true, Ordering::SeqCst);
-                                    self.receiver_running.store(false,Ordering::SeqCst);
-                                }
+
                                 if let Some(texture) = &self.stream_texture {
                                     let available_size = ui.available_size();
                                     let texture_size = texture.size_vec2();
