@@ -604,13 +604,13 @@ impl App for MyApp {
                 egui::Window::new("")
                 .fixed_size(egui::Vec2::new(300.0, 45.0))
                 .collapsible(false)
+                    .movable(true)
                 .title_bar(false)
                 .resizable(false)
                 .frame(egui::Frame::window(&ctx.style())
                     .fill(Color32::from_rgba_unmultiplied(50, 50, 50, 200))
                     .rounding(5.0)
                     .stroke(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60))))
-                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 10.0))
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         self.show_annotation_toolbar(ui);
@@ -656,26 +656,37 @@ impl App for MyApp {
                             });
                             ui.horizontal(|ui| {
                                 ui.label("Seleziona Monitor:");
-                                egui::ComboBox::from_label("")
-                                    .selected_text(match self.selected_display_index {
-                                        Some(index) => &self.available_displays[index].name,
-                                        None => "Seleziona un monitor",
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        for (index, display) in self.available_displays.iter().enumerate() {
-                                            let response = ui.selectable_value(
-                                                &mut self.selected_display_index,
-                                                Some(index),
-                                                &display.name,
-                                            );
+                                if !self.caster_running.load(Ordering::SeqCst) {
+                                    egui::ComboBox::from_label("")
+                                        .selected_text(match self.selected_display_index {
+                                            Some(index) => &self.available_displays[index].name,
+                                            None => "Seleziona un monitor",
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            for (index, display) in self.available_displays.iter().enumerate() {
+                                                let response = ui.selectable_value(
+                                                    &mut self.selected_display_index,
+                                                    Some(index),
+                                                    &display.name,
+                                                );
 
-                                            if response.clicked() {
-                                                self.selected_area = None;
+                                                if response.clicked() {
+                                                    self.selected_area = None;
+                                                }
                                             }
-                                        }
-                                    });
+                                        });
+                                } else {
+                                    // Mostra una versione disabilitata del combobox
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Label::new(match self.selected_display_index {
+                                            Some(index) => &self.available_displays[index].name,
+                                            None => "Seleziona un monitor",
+                                        })
+                                    );
+                                }
 
-                                if ui.button("🔄").clicked() {
+                                if ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), egui::Button::new("🔄")).clicked() {
                                     self.selected_area = None;
                                     self.refresh_displays();
                                 }
