@@ -719,8 +719,18 @@ impl App for MyApp {
 
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error();
-
-                                    self.caster_running.store(true,Ordering::SeqCst);
+                                    self.stream_texture = None;
+                                    self.connected_to_caster.store(false, Ordering::SeqCst);
+                                    {
+                                        let mut state = self.receiver_state.write().unwrap();
+                                        state.reset_parameter();
+                                    }
+                                    {
+                                        let mut shared = self.shared_frame.write().unwrap();
+                                        shared.buffer.clear();
+                                        shared.new_frame = false;
+                                    }
+                                    self.caster_running.store(true, Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
 
                                     let stop_signal = self.stop_signal.clone();
@@ -729,19 +739,21 @@ impl App for MyApp {
                                     let caster_address = self.caster_address.clone();
                                     let error_message = self.error_message.clone();
                                     let is_error = self.is_error.clone();
-                                    let is_running = self.caster_running.clone();
+                                    let is_running = self.caster_running.clone(); // Assicurati di usare caster_running
                                     let selected_display_index = self.selected_display_index.unwrap_or_else(|| 0);
-                                    let paused_clone=self.paused.clone();
-                                    let screen_blanked_clone=self.screen_blanked.clone();
-                                    let terminate_clone=self.terminate.clone();
+                                    let paused_clone = self.paused.clone();
+                                    let screen_blanked_clone = self.screen_blanked.clone();
+                                    let terminate_clone = self.terminate.clone();
+                                    let connected_to_caster = self.connected_to_caster.clone();
 
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
-                                            if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area,selected_display_index,paused_clone,screen_blanked_clone, terminate_clone).await {
+                                            if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area, selected_display_index, paused_clone, screen_blanked_clone, terminate_clone).await {
                                                 let error = format!("Errore nel caster: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
                                                 is_error.store(true, Ordering::SeqCst);
                                                 eprintln!("Errore: {}", e);
+                                                connected_to_caster.store(false, Ordering::SeqCst);
                                             }
                                             is_running.store(false, Ordering::SeqCst);
                                         });

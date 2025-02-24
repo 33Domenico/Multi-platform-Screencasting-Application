@@ -45,7 +45,7 @@ impl ReceiverState {
             last_frame_received: None,
         }
     }
-    fn reset_parameter(&mut self){
+    pub(crate) fn reset_parameter(&mut self){
         self.recording = false;
         self.frame_count = 0;
         self.frame_width = None;
@@ -245,6 +245,7 @@ pub async fn receive_frame(
             return Err(e);
         }
         Err(_) => {
+
             eprintln!("Timeout di connessione al caster scaduto.");
             return Err(io::Error::new(io::ErrorKind::TimedOut, "Timeout di connessione al caster scaduto, controlla l'indirizzo IP inserito e riprova."));
         }
@@ -308,7 +309,17 @@ pub async fn receive_frame(
                             receiver_state.stop_recording()?;
                         }
                     }
+                    connected_to_caster.store(false, Ordering::SeqCst);
+                    if let Ok(mut shared) = shared_frame.write(){
+                        shared.buffer.clear();
+                        shared.new_frame = false;
+                    }
                     return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Il caster ha chiuso la trasmissione."));
+                }
+                connected_to_caster.store(false, Ordering::SeqCst);
+                if let Ok(mut shared) = shared_frame.write() {
+                    shared.buffer.clear();
+                    shared.new_frame = false;
                 }
 
                 return Err(e);
@@ -353,6 +364,12 @@ pub async fn receive_frame(
             receiver_state.stop_recording()?;
         }
     }
+
+    if let Ok(mut shared) = shared_frame.write() {
+        shared.buffer.clear();
+        shared.new_frame = false;
+    }
+    connected_to_caster.store(false, Ordering::SeqCst);
 
     println!("Receiver fermato.");
     Ok(())

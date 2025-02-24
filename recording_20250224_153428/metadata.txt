@@ -1,0 +1,5 @@
+frames: 29
+fps: 7.44
+width: 1920
+height: 1080
+start_time: 2025-02-24T15:34:32.266532+01:00
