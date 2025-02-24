@@ -1,32 +1,42 @@
-# rustproject
-A screencasting application capable of continuously  grabbing the content of the screen (or a portion of it) and stream it to a set of peers with Rust Programming Language 
+# Multi-platform Screencasting Application
 
-Struttura del progetto
+## Overview
+This is a multi-platform screencasting application developed in Rust, supporting Windows, macOS, and Linux. The software enables real-time screen sharing with multiple peers, offering an intuitive and user-friendly experience. Users can act as transmitters or receivers, select portions of the screen to share, and control the transmission via customizable keyboard shortcuts.
 
-src/main.rs: Punto di ingresso dell'applicazione, dove puoi gestire l'interfaccia utente e le opzioni.
-src/caster.rs: Modulo che gestisce la modalità caster (cattura dello schermo e invio).
-src/receiver.rs: Modulo che gestisce la modalità receiver (ricezione e visualizzazione).
-src/ui.rs: Modulo per gestire l'interfaccia utente.
+## Key Features
+- Compatible with Windows, macOS and Linux
+- Caster and receiver modes
+- Possibility to select specific screen areas to share
+- Customizable keyboard shortcuts for transmission control
+- Annotation toolbar designed for educational purposes:
+  - Rectangles: for highlighting areas
+  - Arrows: for pointing to specific elements
+  - Text: tool for adding explanations
 
-Per la funzione registrazione è necessario installare una libreria esterna, digitando da terminale i seguenti comandi:
+## Installation
+Ensure you have the following installed
+- Rust
+- RustRover (recommended IDE for Rust development)
+- All required dependencies using Cargo
 
-Per Windows:
+## Project Structure
+- *src/main.rs:* Application entry point (main logic) 
+- *src/caster.rs:* Handles screen capture and transmission
+- *src/receiver.rs:* Handles screen reception and display
+- *src/ui.rs:* Manages the user interface and toolbar
 
-irm get.scoop.sh | iex
+## Usage
+1. Launch the application with `cargo run --release ui`
+2. Select whether to transmit or receive a screen
+3. If transmitting, choose the screen area to share
+4. Use keyboard shortcuts to pause/resume, blank or stop transmission
+5. Peers can connect and view the shared screen in real-time
 
-scoop install ffmpeg 
+## Keyboard Shortcuts
+- Fn + F1: Pause/Resume Transmission
+- Fn + F2: Blank Screen
+- ESC: Stop Transmission
 
-Per macOS:
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install ffmpeg
-
-Per Linux su Debian/Ubuntu:
-sudo apt update && sudo apt install -y ffmpeg
-
-Per Linux su Fedora:
-sudo dnf install -y ffmpeg
-
-Per Linux su Arch Linux:
-sudo pacman -Syu ffmpeg
-
+## Configuration
+The application supports configuration via a settings file `config.toml`
 
