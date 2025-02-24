@@ -62,7 +62,13 @@ async fn compress_frame_to_jpeg(frame: &[u8], width: usize, height: usize) -> Re
     Ok(jpeg_data)
 }
 
-async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>, hotkey_state: Arc<HotkeyState>,display_index: usize) -> Result<(), Box<dyn Error>> {
+async fn capture_screen(
+    sender: &broadcast::Sender<Vec<u8>>,
+    stop_signal: Arc<AtomicBool>,
+    selected_area: Option<Rect>,
+    hotkey_state: Arc<HotkeyState>,
+    display_index: usize
+) -> Result<(), Box<dyn Error>> {
     let displays = Display::all()?;
     if display_index >= displays.len() {
         return Err("Indice del display non valido".into());
@@ -70,6 +76,8 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
 
     let display = displays.into_iter().nth(display_index).unwrap();
     let mut capturer = Capturer::new(display)?;
+    let mut last_frame: Option<Vec<u8>> = None;
+
     while !stop_signal.load(Ordering::SeqCst) && !hotkey_state.terminate.load(Ordering::SeqCst) {
         if hotkey_state.paused.load(Ordering::SeqCst) {
             sleep(Duration::from_millis(100)).await;
@@ -81,8 +89,8 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
         match capturer.frame() {
             Ok(frame) => {
                 println!("Frame catturato con successo, compressione in corso...");
-
-                let selected_frame = if let Some(area) = selected_area {
+                // Se è stata selezionata un'area, esegui il crop, altrimenti usa l'intero frame.
+                let (selected_frame, cropped_width, cropped_height) = if let Some(area) = selected_area {
                     let start_x = area.min.x as usize;
                     let start_y = area.min.y as usize;
                     let end_x = area.max.x as usize;
@@ -97,39 +105,32 @@ async fn capture_screen(sender: &broadcast::Sender<Vec<u8>>, stop_signal: Arc<At
                 } else {
                     (frame.to_vec(), width, height)
                 };
-
-                let (cropped_frame, cropped_width, cropped_height) = selected_frame;
-
-                if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
-
-                    let blank_frame = vec![0; cropped_width * cropped_height * 4];
-                    let jpeg_frame = compress_frame_to_jpeg(&blank_frame, cropped_width, cropped_height).await?;
-                    let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
-                    if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
-                        eprintln!("Errore nell'invio del frame: {}", e);
-                    }
-                } else {
-                    let jpeg_frame = compress_frame_to_jpeg(&cropped_frame, cropped_width, cropped_height).await?;
-                    let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
-                    println!("Dimensione frame: {} byte", jpeg_frame.len());
-                    if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
-                        eprintln!("Errore nell'invio del frame: {}", e);
+                let jpeg_frame = compress_frame_to_jpeg(&selected_frame, cropped_width, cropped_height).await?;
+                last_frame = Some(jpeg_frame.clone());
+                let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
+                if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
+                    eprintln!("Errore nell'invio del frame: {}", e);
+                }
+            },
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if let Some(ref frame) = last_frame {
+                    let frame_size = (frame.len() as u32).to_be_bytes();
+                    if let Err(e) = sender.send([&frame_size[..], &frame[..]].concat()) {
+                        eprintln!("Errore nell'invio del frame di heartbeat: {}", e);
                     }
                 }
-                println!("Frame compresso e inviato.");
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-            }
+                sleep(Duration::from_millis(10)).await;
+            },
             Err(e) => {
                 eprintln!("Errore nella cattura del frame: {:?}", e);
             }
         }
         sleep(Duration::from_millis(10)).await;
     }
-
     println!("Cattura dello schermo interrotta.");
     Ok(())
 }
+
 
 pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize,paused: Arc<AtomicBool>, screen_blanked: Arc<AtomicBool>,terminate: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(addr).await?;
