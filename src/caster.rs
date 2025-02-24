@@ -73,11 +73,11 @@ async fn capture_screen(
     if display_index >= displays.len() {
         return Err("Indice del display non valido".into());
     }
-
     let display = displays.into_iter().nth(display_index).unwrap();
     let mut capturer = Capturer::new(display)?;
     let mut last_frame: Option<Vec<u8>> = None;
-
+    let mut default_width = capturer.width();
+    let mut default_height = capturer.height();
     while !stop_signal.load(Ordering::SeqCst) && !hotkey_state.terminate.load(Ordering::SeqCst) {
         if hotkey_state.paused.load(Ordering::SeqCst) {
             sleep(Duration::from_millis(100)).await;
@@ -85,11 +85,11 @@ async fn capture_screen(
         }
         let width = capturer.width();
         let height = capturer.height();
-
+        default_width = width;
+        default_height = height;
         match capturer.frame() {
             Ok(frame) => {
                 println!("Frame catturato con successo, compressione in corso...");
-                // Se è stata selezionata un'area, esegui il crop, altrimenti usa l'intero frame.
                 let (selected_frame, cropped_width, cropped_height) = if let Some(area) = selected_area {
                     let start_x = area.min.x as usize;
                     let start_y = area.min.y as usize;
@@ -105,7 +105,12 @@ async fn capture_screen(
                 } else {
                     (frame.to_vec(), width, height)
                 };
-                let jpeg_frame = compress_frame_to_jpeg(&selected_frame, cropped_width, cropped_height).await?;
+                let jpeg_frame = if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
+                    let blank_frame = vec![0; cropped_width * cropped_height * 4];
+                    compress_frame_to_jpeg(&blank_frame, cropped_width, cropped_height).await?
+                } else {
+                    compress_frame_to_jpeg(&selected_frame, cropped_width, cropped_height).await?
+                };
                 last_frame = Some(jpeg_frame.clone());
                 let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
                 if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
@@ -113,7 +118,18 @@ async fn capture_screen(
                 }
             },
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if let Some(ref frame) = last_frame {
+                if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
+                    let jpeg_frame = if let Some(ref frame) = last_frame {
+                        frame.clone()
+                    } else {
+                        let blank_frame = vec![0; default_width * default_height * 4];
+                        compress_frame_to_jpeg(&blank_frame, default_width, default_height).await?
+                    };
+                    let frame_size = (jpeg_frame.len() as u32).to_be_bytes();
+                    if let Err(e) = sender.send([&frame_size[..], &jpeg_frame[..]].concat()) {
+                        eprintln!("Errore nell'invio del frame di blank screen: {}", e);
+                    }
+                } else if let Some(ref frame) = last_frame {
                     let frame_size = (frame.len() as u32).to_be_bytes();
                     if let Err(e) = sender.send([&frame_size[..], &frame[..]].concat()) {
                         eprintln!("Errore nell'invio del frame di heartbeat: {}", e);
@@ -130,6 +146,7 @@ async fn capture_screen(
     println!("Cattura dello schermo interrotta.");
     Ok(())
 }
+
 
 
 pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize,paused: Arc<AtomicBool>, screen_blanked: Arc<AtomicBool>,terminate: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
