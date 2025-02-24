@@ -15,7 +15,6 @@ pub struct ReceiverState {
     pub recording: bool,
     pub(crate) frame_count: u32,
     pub(crate) output_dir: String,
-    current_video_path: Option<String>,
     frame_width: Option<u32>,
     frame_height: Option<u32>,
     last_frame_time: Option<Instant>,
@@ -33,7 +32,6 @@ impl ReceiverState {
             recording: false,
             frame_count: 0,
             output_dir: String::new(),
-            current_video_path: None,
             frame_width: None,
             frame_height: None,
             last_frame_time: None,
@@ -111,14 +109,6 @@ impl ReceiverState {
         Ok(())
     }
 
-    fn delete_frames(&self) -> io::Result<()> {
-        let frames_dir = Path::new(&self.output_dir).join("frames");
-        if frames_dir.exists() {
-            fs::remove_dir_all(frames_dir)?;
-            println!("Frames deleted successfully.");
-        }
-        Ok(())
-    }
     pub fn stop_recording(&mut self) -> io::Result<()> {
         if !self.recording {
             return Ok(());
@@ -147,70 +137,64 @@ impl ReceiverState {
         );
 
         fs::write(Path::new(&self.output_dir).join("metadata.txt"), metadata)?;
-        match self.convert_to_mp4() {
-            Ok(_) => {
-                self.delete_frames()?;
-            }
-            Err(e) => {
-                self.reset_parameter();
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    e.to_string(),
-                ));
-            }
-        }
+
+        let output_dir = self.output_dir.clone();
+        let framerate = self.framerate;
+        let frame_width = self.frame_width;
+        let frame_height = self.frame_height;
+
+        // Resetta lo stato immediatamente
         self.reset_parameter();
-        Ok(())
-    }
 
-    fn convert_to_mp4(&mut self) -> io::Result<()> {
-        if !Command::new("ffmpeg").arg("-version").output().is_ok() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "ffmpeg not found. Please install ffmpeg to enable video conversion.",
-            ));
-        }
+        tokio::spawn(async move {
+            let conversion_result = convert_to_mp4(&output_dir, framerate, frame_width, frame_height);
 
-        let output_path = Path::new(&self.output_dir)
-            .join("output.mp4")
-            .to_string_lossy()
-            .to_string();
-
-        let frames_pattern = Path::new(&self.output_dir)
-            .join("frames")
-            .join("frame_%06d.png")
-            .to_string_lossy()
-            .to_string();
-
-        let output = Command::new("ffmpeg")
-            .args([
-                "-framerate", &format!("{:.2}", self.framerate ),
-                "-i", &frames_pattern,
-                "-vf", "scale=ceil(iw/2)*2:ceil(ih/2)*2",
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-preset", "medium",
-                "-crf", "23",
-                "-r", &format!("{:.2}", self.framerate ),
-                "-y",
-                &output_path
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to convert video: {}", error),
-            ));
-        }
-
-        self.current_video_path = Some(output_path.clone());
-        println!("Video successfully created at: {}", output_path);
+            if conversion_result.is_ok() {
+                let _ = delete_frames(&output_dir);
+            }
+        });
 
         Ok(())
     }
+
 }
+fn delete_frames(output_dir: &str) -> io::Result<()> {
+    fs::remove_dir_all(Path::new(output_dir).join("frames"))?;
+    Ok(())
+}
+fn convert_to_mp4(output_dir: &str, framerate: f64, width: Option<u32>, height: Option<u32>) -> io::Result<()> {
+    if width.is_none() || height.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Dimensioni frame non valide"
+        ));
+    }
+
+    let output = Command::new("ffmpeg")
+        .args(&[
+            "-framerate", &format!("{:.2}", framerate),
+            "-i", &format!("{}/frames/frame_%06d.png", output_dir),
+            "-vf", "scale=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "fast",  // Ottimizzazione per velocità
+            "-crf", "23",
+            "-y",
+            &format!("{}/output.mp4", output_dir)
+        ])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
+}
+
+
 pub struct SharedFrame {
     pub buffer: Vec<u8>,
     pub width: usize,
@@ -302,27 +286,19 @@ pub async fn receive_frame(
             Ok(Err(e)) => {
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
 
-                let frame_size = u32::from_be_bytes(size_buf) as usize;
-                if frame_size == 0 {
+                // Chiudi la connessione solo se è un errore irreversibile
+                if e.kind() == io::ErrorKind::UnexpectedEof {
                     if let Ok(mut receiver_state) = receiver_state.write() {
                         if receiver_state.recording {
-                            receiver_state.stop_recording()?;
+                            let _ = receiver_state.stop_recording();
                         }
                     }
-                    connected_to_caster.store(false, Ordering::SeqCst);
-                    if let Ok(mut shared) = shared_frame.write(){
-                        shared.buffer.clear();
-                        shared.new_frame = false;
-                    }
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Il caster ha chiuso la trasmissione."));
-                }
-                connected_to_caster.store(false, Ordering::SeqCst);
-                if let Ok(mut shared) = shared_frame.write() {
-                    shared.buffer.clear();
-                    shared.new_frame = false;
+                    return Err(io::Error::new(e.kind(), "Connessione con il caster interrotta"));
                 }
 
-                return Err(e);
+                // Riprova la connessione invece di terminare
+                sleep(Duration::from_secs(1)).await;
+                continue;
             }
 
             Err(_) => {

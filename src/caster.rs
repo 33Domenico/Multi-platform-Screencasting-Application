@@ -76,8 +76,6 @@ async fn capture_screen(
     let display = displays.into_iter().nth(display_index).unwrap();
     let mut capturer = Capturer::new(display)?;
     let mut last_frame: Option<Vec<u8>> = None;
-    let mut default_width = capturer.width();
-    let mut default_height = capturer.height();
     while !stop_signal.load(Ordering::SeqCst) && !hotkey_state.terminate.load(Ordering::SeqCst) {
         if hotkey_state.paused.load(Ordering::SeqCst) {
             sleep(Duration::from_millis(100)).await;
@@ -85,8 +83,8 @@ async fn capture_screen(
         }
         let width = capturer.width();
         let height = capturer.height();
-        default_width = width;
-        default_height = height;
+        let default_width = width;
+        let default_height = height;
         match capturer.frame() {
             Ok(frame) => {
                 println!("Frame catturato con successo, compressione in corso...");
@@ -151,7 +149,7 @@ async fn capture_screen(
 
 pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_area: Option<Rect>,display_index: usize,paused: Arc<AtomicBool>, screen_blanked: Arc<AtomicBool>,terminate: Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(addr).await?;
-    let (tx, _rx) = broadcast::channel::<Vec<u8>>(10);
+    let (tx, _rx) = broadcast::channel::<Vec<u8>>(100);
     let tx = Arc::new(tx);
     println!("Caster avviato su {}", addr);
     let hotkey_state = Arc::new(HotkeyState {
@@ -193,6 +191,10 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
                                 }
                             }
                             Err(e) => {
+                                if e.to_string().contains("lagged") {
+                                    eprintln!("Avviso: il canale è in ritardo, salto alcuni frame: {}", e);
+                                    continue; // Continue instead of breaking
+                                }
                                 eprintln!("Errore nella ricezione del frame dal canale: {}", e);
                                 break;
                             }
