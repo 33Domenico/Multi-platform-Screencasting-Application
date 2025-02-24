@@ -14,16 +14,29 @@ This is a multi-platform screencasting application developed in Rust, supporting
   - Text: tool for adding explanations
 
 ## Installation
-Ensure you have the following installed
+Ensure you have the following installed:
 - Rust
 - RustRover (recommended IDE for Rust development)
 - All required dependencies using Cargo
 
+To enable screen recording you need to install FFmpeg. 
+Run the following commands based on your operating system:
+- **Windows**:
+  - `irm get.scoop.sh | iex`
+  - `scoop install ffmpeg`
+- **macOS**:
+  - `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
+  - `brew install ffmpeg`
+- **Linux**:
+  - `sudo apt update`
+  - `sudo apt install -y ffmpeg`
+
+
 ## Project Structure
-- *src/main.rs:* Application entry point (main logic) 
-- *src/caster.rs:* Handles screen capture and transmission
-- *src/receiver.rs:* Handles screen reception and display
-- *src/ui.rs:* Manages the user interface and toolbar
+- **src/main.rs:** Application entry point (main logic) 
+- **src/caster.rs:** Handles screen capture and transmission
+- **src/receiver.rs:** Handles screen reception and display
+- **src/ui.rs:** Manages the user interface and toolbar
 
 ## Usage
 1. Launch the application with `cargo run --release ui`
@@ -33,9 +46,9 @@ Ensure you have the following installed
 5. Peers can connect and view the shared screen in real-time
 
 ## Keyboard Shortcuts
-- Fn + F1: Pause/Resume Transmission
-- Fn + F2: Blank Screen
-- ESC: Stop Transmission
+- **Fn + F1**: Pause/Resume Transmission
+- **Fn + F2**: Blank Screen
+- **ESC**: Stop Transmission
 
 ## Configuration
 The application supports configuration via a settings file `config.toml`
