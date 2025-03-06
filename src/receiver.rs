@@ -222,22 +222,20 @@ pub async fn receive_frame(
 ) -> io::Result<()> {
 
     let read_timeout = Duration::from_secs(2);
+    let mut stream;
     match timeout(read_timeout, TcpStream::connect(addr)).await {
-        Ok(Ok(s)) => s,
+        Ok(Ok(s)) => stream=s,
         Ok(Err(e)) => {
             eprintln!("Errore di connessione al caster: {}", e);
             return Err(e);
         }
         Err(_) => {
-
             eprintln!("Timeout di connessione al caster scaduto.");
             return Err(io::Error::new(io::ErrorKind::TimedOut, "Timeout di connessione al caster scaduto, controlla l'indirizzo IP inserito e riprova."));
         }
     };
 
     connected_to_caster.store(true, Ordering::SeqCst);
-
-    let mut stream = TcpStream::connect(addr).await?;
     let read_timeout = Duration::from_secs(2);
     let mut no_frame_received = false;
 
@@ -293,6 +291,7 @@ pub async fn receive_frame(
                             let _ = receiver_state.stop_recording();
                         }
                     }
+                    connected_to_caster.store(false, Ordering::SeqCst);
                     return Err(io::Error::new(e.kind(), "Connessione con il caster interrotta"));
                 }
 
@@ -313,7 +312,7 @@ pub async fn receive_frame(
                 if !no_frame_received {
                     if let Ok(mut receiver_state) = receiver_state.write() {
                         if receiver_state.pause_start_time.is_none() {
-                            receiver_state.pause_start_time = Some(Instant::now());
+                            receiver_state.pause_start_time = Some(Instant::now()-Duration::from_millis(1975));
                         }
                     }
                     no_frame_received = true;

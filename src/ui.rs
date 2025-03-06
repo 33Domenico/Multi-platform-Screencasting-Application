@@ -429,8 +429,6 @@ impl MyApp {
                         _ => {}
                     }
                 }
-            } else if mouse_pressed {
-                self.annotation_state.end_pos = Some(pos);
             }
         }
 
@@ -816,6 +814,7 @@ impl App for MyApp {
                                 self.status_message="Modalità selezionata: Receiver".to_string();
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error();
+                                    self.stream_texture=None;
                                     let addr = self.caster_address.clone();
                                     let receiver_state = Arc::clone(&self.receiver_state);
                                     self.receiver_running.store(true, Ordering::SeqCst);
