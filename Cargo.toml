@@ -1,0 +1,18 @@
+[package]
+name = "progettoRust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = {version = "1.40.0", features = ["full"]}
+scrap = "0.5.0"
+image = "0.25.2"
+minifb = "0.27.0"
+egui = "0.31.0"
+eframe = "0.29.1"
+winit = "0.27.1"
+device_query = "2.1.0"
+chrono = "0.4"
+egui_extras = "0.29"

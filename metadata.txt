@@ -1,0 +1,5 @@
+frames: 0
+fps: 30
+width: 0
+height: 0
+start_time: 2024-11-17T15:11:43.556428900+01:00
