@@ -115,26 +115,26 @@ struct DisplayInfo {
 impl Default for MyApp {
     fn default() -> Self {
         Self {
-            mode: None,
+            mode: None, //Modalità selezionata, caster o reciver
             caster_address: String::from(""),
             status_message: String::from("Seleziona una modalità per iniziare."),
             caster_running: Arc::new(AtomicBool::new(false)),
             receiver_running:  Arc::new(AtomicBool::new(false)),
             stop_signal: Arc::new(AtomicBool::new(false)),
-            start_pos: None,
-            selecting_area: false,
-            selected_area: None,
-            screenshot: None,
-            error_message: Arc::new(RwLock::new(None)),
-            is_error: Arc::new(AtomicBool::new(false)),
-            available_displays: Vec::new(),
-            selected_display_index: None,
+            start_pos: None,//Posizione di inizio della selezione dell'area
+            selecting_area: false,//Flag che controlla se l ozpione di selezione dell'area è attiva
+            selected_area: None, //Salva l area selzionata in formato rettangolare
+            screenshot: None, //Salva lo screenshot come texuture(egui) dell displa
+            error_message: Arc::new(RwLock::new(None)),//Immagazzina il messaagio di erroe proveniente dai vari thred attivi
+            is_error: Arc::new(AtomicBool::new(false)),//Flag per impostre l'erroe, permette la visualizzazione di un messaggio di errore
+            available_displays: Vec::new(),// Vettore contente le informazioni realtive ai diplay disponibilli
+            selected_display_index: None, //Indice del display selezionato
             start_pos_relative: None,
             shared_frame: Arc::new(RwLock::new(SharedFrame::default())),
-            stream_texture: None,
+            stream_texture: None,//Texture dell ultima immagine ricevuta dal caster
             receiver_state: Arc::new(RwLock::new(ReceiverState::new())),
-            annotation_state: AnnotationState::default(),
-            toolbar_visible: false,
+            annotation_state: AnnotationState::default(),// Tool di annotazione (retteangolo freccia o text), contiene tutte le annotazioni fatte fino ad ora
+            toolbar_visible: false,// flag per controllare se la toolbar è visibile o meno
             paused: Arc::new(AtomicBool::new(false)),
             screen_blanked: Arc::new(AtomicBool::new(false)),
             terminate: Arc::new(AtomicBool::new(false)),
@@ -148,8 +148,9 @@ impl MyApp {
     fn handle_recording_error(&self, error: String) {
         self.set_error(format!("Errore di registrazione: {}", error));
     }
+    //Handler per refershare i display disponibili
     fn refresh_displays(&mut self) {
-        self.available_displays.clear();
+        self.available_displays.clear();//Pulisci array
         if let Ok(displays) = Display::all() {
             for (index, display) in displays.iter().enumerate() {
                 self.available_displays.push(DisplayInfo {
@@ -157,15 +158,17 @@ impl MyApp {
                     width: display.width(),
                     height: display.height(),
                     index,
-                });
+                }); //inserisco informazioni relative ad ogni arry nel vettore avalible display
             }
         }
+        //Se il display disponibile è solo uno seleziona quest'ultimo in maniera automatica
         if self.available_displays.len() == 1 {
             self.selected_display_index = Some(0);
         }
     }
 
     fn display_error(&self, ui: &mut egui::Ui) {
+        //Se il flag di errore è impostato allora disegna scrivi l erroe nella ui
         if self.is_error.load(Ordering::SeqCst) {
             if let Some(error) = self.error_message.read().unwrap().as_ref() {
                 ui.label(egui::RichText::new(error).color(egui::Color32::RED));
@@ -173,58 +176,67 @@ impl MyApp {
         }
     }
     fn clear_error(&self) {
+        //Elimina il messaggio di erroe quando, resettando valore e flag relativo
         *self.error_message.write().unwrap() = None;
         self.is_error.store(false, Ordering::SeqCst);
     }
 
     fn set_error(&self, error: String) {
+        //Imposta il messaggio di errore e il flag relativo(Non visualizzarlo)
         *self.error_message.write().unwrap() = Some(error);
         self.is_error.store(true, Ordering::SeqCst);
     }
+    //Funzione per la selziono della porzione di schermo(seleziona area)
     fn handle_selection(&mut self, ctx: &egui::Context, image_rect: egui::Rect) {
+        //Controllo se l'opzione di selzione dell' area è attiva
         if self.selecting_area {
-            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
-
+            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair); //Il cursore del mouse viene cambiato in una croce
+            //Mi permette di ottenre la posizione del mpuse e lo stato dei pulsanti
             let response = ctx.input(|i| {
-                let pos = i.pointer.hover_pos();
-                let pressed = i.pointer.primary_pressed();
-                let released = i.pointer.primary_released();
+                let pos = i.pointer.hover_pos();//posizione attuale del mouse
+                let pressed = i.pointer.primary_pressed();// indica se il pulsante sinistro del mpuse è statp premuto
+                let released = i.pointer.primary_released();//indica se il pulsante sinistro del mouse è stato rilasciato
                 (pos, pressed, released)
             });
-
+            //Se l'utente clicca e rilascia il mouse significa che ha selzionato l'area
+            //nell if si entra quando e stato premuto o è stato rilasciato il tasto sinisro
             if let (Some(current_pos), pressed, released) = response {
-
+                //se la dimensione dell'area di selezione non sono valide viene mostrato un erroe
                 if image_rect.width() <= 0.0 || image_rect.height() <= 0.0 {
                     self.selecting_area = false;
                     self.set_error("Invalid display dimensions".to_string());
                     return;
                 }
-
+                //clamp definisce i confini dell'area di selezione, che deve rientrare in quelli dell'immagine(se per esempio si sta utilizzando un secondo schermo di dimensioni piu piccole del primo, claps permette che l area di selezione sia in quelle dimesioni ristette stabilite dallo screenshot ottenuto e non va a strabordare)
                 let clamped_pos = Pos2::new(
-                    current_pos.x.clamp(image_rect.min.x, image_rect.max.x),
-                    current_pos.y.clamp(image_rect.min.y, image_rect.max.y)
+                    current_pos.x.clamp(image_rect.min.x, image_rect.max.x),//angolo in alto a sinistra
+                    current_pos.y.clamp(image_rect.min.y, image_rect.max.y)//angolo in basso a destra
                 );
-
+                //Memorizza il punto di inzio della selezione
                 if pressed && self.start_pos.is_none() {
-                    if clamped_pos.x.is_finite() && clamped_pos.y.is_finite() {
-                        self.start_pos = Some(clamped_pos);
+                    if clamped_pos.x.is_finite() && clamped_pos.y.is_finite() {//controlla che le cordinate non siano NaN o infinite
+                        self.start_pos = Some(clamped_pos); //poszione di inizio assoluta
+                        //Spigolo in alto a sinistra relativo, uitile in quanto l immagine viene rdimensionata per adattarsi allo schermo, in questo modo io ho le cordinate assolute sempicemente moltiplicando es1600x800, x_rlativo*1600 e y_relativo*800
                         self.start_pos_relative = Some(Pos2::new(
-                            (clamped_pos.x - image_rect.min.x) / image_rect.width(),
-                            (clamped_pos.y - image_rect.min.y) / image_rect.height()
+                            (clamped_pos.x - image_rect.min.x) / image_rect.width(), // poszione iniziale relatvie all immgine mostratata dall ui(ridiemnsionata in scal per farla entare se necessario)
+                            (clamped_pos.y - image_rect.min.y) / image_rect.height() //posizione iniziale relativa
                         ));
                     }
+                    //rilascio del pulsante sinistro del mouse
                 } else if released && self.start_pos.is_some() {
                     if let Some(start_relative) = self.start_pos_relative {
                         let end_relative = Pos2::new(
                             ((clamped_pos.x - image_rect.min.x) / image_rect.width()).clamp(0.0, 1.0),
                             ((clamped_pos.y - image_rect.min.y) / image_rect.height()).clamp(0.0, 1.0)
-                        );
+                        );// psizione relativa finale normalizzata a volri 0 e 1
                         if let Some(display_index) = self.selected_display_index {
+                            //vegono recuperate le dimesioni reali del display selezionato
                             if let Ok(displays) = Display::all() {
                                 if let Some(display) = displays.get(display_index) {
-                                    let screen_width = display.width() as f32;
-                                    let screen_height = display.height() as f32;
-                                    let min_x = (start_relative.x.min(end_relative.x) * screen_width).round();
+                                    let screen_width = display.width() as f32;//largehzza dello schermo
+                                    let screen_height = display.height() as f32;//altezza reale dello schermo
+                                    //la selzione deve essere ben definita indipendentemente dal modo in cui l utente seleziona l area, quindi se l utente seleziona da destra a sinistra o da sinistra a destra, l area selezionata deve essere sempre la stessa e avere valori positivi
+                                    let min_x = (start_relative.x.min(end_relative.x) * screen_width).round();//calcolo delle cordinatte effettive
                                     let min_y = (start_relative.y.min(end_relative.y) * screen_height).round();
                                     let max_x = (start_relative.x.max(end_relative.x) * screen_width).round();
                                     let max_y = (start_relative.y.max(end_relative.y) * screen_height).round();
@@ -232,14 +244,14 @@ impl MyApp {
                                         self.selected_area = Some(Rect::from_min_max(
                                             Pos2::new(min_x, min_y),
                                             Pos2::new(max_x, max_y)
-                                        ));
+                                        )); //salvo area seezionata
                                     }
                                 }
                             }
                         }
 
-                        self.selecting_area = false;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                        self.selecting_area = false; //qunado hai rilasciato il pulsnate sinistro esci dalla selziona area
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false)); //imposta la finestra a schermo non intero
 
                         if let Some(area) = self.selected_area {
                             self.status_message = format!("Area selezionata: {:?}", area);
@@ -251,30 +263,30 @@ impl MyApp {
 
                 if self.selecting_area && self.start_pos.is_some() {
                     ctx.request_repaint();
-                }
+                }  //se la selezione è attiva forse un ridisegno della ui per mostare il rettangolo che si sta tracciando a schermo
             }
         } else {
-            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
+            ctx.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);//fai ritornare il cursore normale
         }
     }
 
     fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, color: egui::Color32) {
-        let stroke = egui::Stroke::new(2.0, color);
+        let stroke = egui::Stroke::new(2.0, color); //definisce lo stile della linea
 
-        let dir = end - start;
-        let length = dir.length();
+        let dir = end - start;//direzione della freccia (vettore che indica la direzione della freccia)
+        let length = dir.length();// ≈ √(100² + 50²) ≈ 111.8 pixel
         if length < 5.0 {
             return;
-        }
+        }//sel la freccia è minore di 5 pixel non ritonra
 
-        let dir_normalized = dir / length;
+        let dir_normalized = dir / length; //versione piu piccola della freccia lunghezza 1px per fare calcoli rpoporzionali
 
         let arrowhead_length = 16.0;
         let arrowhead_width = 10.0;
-        let tip = end;
-        let base = end - dir_normalized * arrowhead_length;
+        let tip = end;//punta della freccia
+        let base = end - dir_normalized * arrowhead_length; //non disegni la freccia per intero ma ti fermi 16px prima
 
-        let perp = egui::Vec2::new(-dir_normalized.y, dir_normalized.x) * (arrowhead_width / 2.0);
+        let perp = egui::Vec2::new(-dir_normalized.y, dir_normalized.x) * (arrowhead_width / 2.0); //vettore perpendicolare alla direzione per creare i lati della punta
         let left = base + perp;
         let right = base - perp;
 
@@ -284,7 +296,7 @@ impl MyApp {
         let points = vec![tip, left, right];
         painter.add(egui::Shape::convex_polygon(points, color, stroke));
     }
-
+    //Cattura un istantanea dello schermo e lo carica come texure in egui
     fn capture_screenshot(&mut self, ctx: &egui::Context) {
         let display_index = match self.selected_display_index {
             Some(index) => index,
@@ -307,7 +319,7 @@ impl MyApp {
             return;
         }
 
-        let target_display = displays.into_iter().nth(display_index).unwrap();
+        let target_display = displays.into_iter().nth(display_index).unwrap();//ricava il display selzionato dall'utente
         let width= target_display.width();
         let height =target_display.height();
         let mut capturer = match Capturer::new(target_display) {
@@ -317,7 +329,7 @@ impl MyApp {
                 self.set_error(format!("Errore nella creazione del capturer: {}", e));
                 return;
             }
-        };
+        };// inizializza un capturer relativo allo sschermo selezionato
         let frame = loop {
             match capturer.frame() {
                 Ok(frame) => {
@@ -331,38 +343,41 @@ impl MyApp {
                     return;
                 }
             }
-        };
+        };//tenta piu volte fino a quando non cattura lo screen, se il frame non è pronto dorme per 200ms e riprova
 
         let mut img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(
            width as u32,
            height as u32
-        );
+        ); //crea un buffer per l'immagine
 
         for (i, pixel) in img_buffer.pixels_mut().enumerate() {
             let idx = i * 4;
             if idx + 3 < frame.len() {
                 *pixel = Rgba([frame[idx + 2], frame[idx + 1], frame[idx], 255]);
             }
-        }
+        } //converte immagine da formato bgr a formato rgb, inotr il canale alpha è imposato su opaco
 
         let color_image = egui::ColorImage::from_rgba_unmultiplied(
             [width, height],
             &img_buffer.into_raw(),
-        );
+        ); //converte l immagine in un formato compatibile con egui
 
         self.screenshot = Some(ctx.load_texture(
             "screenshot",
             color_image,
             egui::TextureOptions::LINEAR,
-        ));
+        ));// carica l immagine come  Texure in egui(egui è in grado di gestire solo questo tipo di interfacce)
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
     }
     fn show_annotation_toolbar(&mut self, ui: &mut egui::Ui) {
+        //Toolbar per la selezione degli strumenti di annotazione
         ui.horizontal(|ui| {
             let mut tool_button = |ui: &mut egui::Ui, tool: AnnotationTool, icon: &str ,label: &str| {
+               //creazione del pulsante di annotazione
                 let button = egui::Button::new(format!("{icon} {label}"))
                     .min_size(egui::vec2(40.0, 20.0));
+                //aggiunta del pulsante alla ui
                 let response = ui.add(button);
 
                 if response.clicked(){
@@ -370,18 +385,18 @@ impl MyApp {
                 }
 
                 if self.annotation_state.active_tool == tool{
-                    response.clone().highlight();
+                    response.clone().highlight();//Matka il pulsante selzionato
                 }
                 response.on_hover_text(format!("Usa lo strumento: {label}"));
             };
-
+            //Pulsanti per gli strumenti di annotazione
             tool_button(ui, AnnotationTool::Rectangle, "▭", "Rettangolo");
             tool_button(ui, AnnotationTool::Arrow, "➡", "Freccia");
             tool_button(ui, AnnotationTool::Text, "📝", "Testo");
             // Clear button
             let clear_button = egui::Button::new("❌ Cancella Tutto")
                 .min_size(egui::vec2(40.0, 20.0));
-
+            //pulsante per la cancellazione di tutte le annotazioni
             if ui.add(clear_button).on_hover_text("Elimina tutte le annotazioni").clicked(){
                 self.annotation_state.annotations.clear();
             }
@@ -390,36 +405,37 @@ impl MyApp {
 
 
     fn handle_annotations(&mut self, ui: &mut egui::Ui) {
-        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
-        let mouse_pressed = ui.input(|i| i.pointer.primary_pressed());
-        let mouse_released = ui.input(|i| i.pointer.primary_released());
+        let pointer_pos = ui.input(|i| i.pointer.hover_pos()); //Posizione corrente del mapuse
+        let mouse_pressed = ui.input(|i| i.pointer.primary_pressed());//Indica se il pulsante sinistro del mouse è stato premuto
+        let mouse_released = ui.input(|i| i.pointer.primary_released()); //Indica se il pulsante sinistro del mouse è stato rilasciato
 
         if let Some(pos) = pointer_pos {
             if mouse_pressed {
-                self.annotation_state.start_pos = Some(pos);
+                self.annotation_state.start_pos = Some(pos); //Salva i punto iniziale, se il pulsante sinistro del mpuse sta venedo premuto
                 if self.annotation_state.active_tool == AnnotationTool::Text
                     && self.annotation_state.editing_text.is_none() {
-                    self.annotation_state.editing_text = Some(String::new());
+                    self.annotation_state.editing_text = Some(String::new()); //crea una stringa vuota che conterra il testo scritto
                     self.annotation_state.text_edit_id = Some(egui::Id::new("text_edit"));
                 }
             } else if mouse_released {
+                //Al momento del rilascio del puksante sinistro del mouse, viene salvata l'annotazione(ovviamente nel caso del testo non viene fatto niente)
                 if let Some(start) = self.annotation_state.start_pos {
                     match self.annotation_state.active_tool {
                         AnnotationTool::Rectangle => {
-                            let rect = Rect::from_two_pos(start, pos);
+                            let rect = Rect::from_two_pos(start, pos);//crea un rettangolo a partire dalla posizione iniziale e quella finale
                             self.annotation_state.annotations.push(Annotation::Rectangle {
                                 rect,
                                 color: Color32::WHITE,
-                            });
+                            });//Lo inserisce nell'array delle annotazioni
                             self.annotation_state.start_pos = None;
-                            self.annotation_state.end_pos = None;
+                            self.annotation_state.end_pos = None; //resetta le posizioni iniziali e finali
                         },
                         AnnotationTool::Arrow => {
                             self.annotation_state.annotations.push(Annotation::Arrow {
                                 start,
                                 end: pos,
                                 color: Color32::WHITE,
-                            });
+                            }); //stessa cosa per la freccia
                             self.annotation_state.start_pos = None;
                             self.annotation_state.end_pos = None;
 
@@ -429,18 +445,17 @@ impl MyApp {
                         _ => {}
                     }
                 }
-            } else if mouse_pressed {
-                self.annotation_state.end_pos = Some(pos);
-            }
+            }//todo togli l altro if non serve
         }
-
+        //durante l annotazione o coumnuq dopo che si è premuto il pulsante sinistro del mouse, se l'utente sta scrivendo del testo, viene mostrato un campo di testo per l'inserimento del testo
         if let Some(start) = self.annotation_state.start_pos {
             if self.annotation_state.active_tool == AnnotationTool::Text {
                 if let Some(editing_text) = &mut self.annotation_state.editing_text {
+                    //inserisci la input casella per inserire il testo
                     let text_edit = egui::TextEdit::singleline(editing_text)
                         .desired_width(200.0)
                         .font(FontId::proportional(14.0));
-
+                    //inserisci la casella nella posizione di partenza,nel rect creato
                     let response = ui.put(
                         Rect::from_min_size(start, egui::Vec2::new(200.0, 20.0)),
                         text_edit
@@ -458,7 +473,7 @@ impl MyApp {
                         self.annotation_state.editing_text = None;
                         self.annotation_state.text_edit_id = None;
                         self.annotation_state.start_pos = None;
-                    }
+                    }//quando viene cliccato il pulsante invio e si è scritto qualcosa nella csella di testo , questo vine salvato come annotazione
                 }
             }
         }
@@ -483,7 +498,7 @@ impl MyApp {
                 },
             }
         }
-
+        //Mostra una froma fantasma durante il tracinamento, non vine salvato fino al rilascio del mouse
         if let (Some(start), Some(current_pos)) = (self.annotation_state.start_pos, pointer_pos) {
             match self.annotation_state.active_tool {
                 AnnotationTool::Rectangle => {
@@ -527,62 +542,66 @@ impl MyApp {
 impl App for MyApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0, 0.0, 0.0, 0.0]
-    }
+    }//Necessario per impostare la trasparenza quando si mostra la toolbar
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         if self.selected_display_index==None{
             self.refresh_displays()
-        }
+        }//refresha ogni volta i dispaly disponibili se non è ancora stato selzionato uno
 
         if self.selecting_area {
-            egui::CentralPanel::default()
+            egui::CentralPanel::default() //crea un pannelo centrale che occupa tuttlo lo spazio disponibile
                 .frame(egui::Frame::none().fill(Color32::TRANSPARENT))
-                .show(ctx, |ui| {
+                .show(ctx, |ui| {//rendering del contenuto all interno del pannello
                     let mut image_rect = egui::Rect::NOTHING;
 
                     if let Some(texture) = &self.screenshot {
-                        let available_size = ui.available_size();
-                        let texture_size = texture.size();
-                        let texture_aspect = texture_size[0] as f32 / texture_size[1] as f32;
+                        let available_size = ui.available_size(); //spazio disponibile nel pannello
+                        let texture_size = texture.size(); //Dimensioni originali della texture
+                        let texture_aspect = texture_size[0] as f32 / texture_size[1] as f32; // viene calcolato l axpet ratio dell'immagine
                         let available_aspect = available_size.x / available_size.y;
 
                         let size = if texture_aspect > available_aspect {
+                            //La texture è più larga dell'area disponibile
+                            //La larghezza dell'immagine vine impostata alla larghezza massima disponibile,l'altezza viene scalata proporzionalmente per mantenere l'aspect ratio
                             egui::vec2(available_size.x, available_size.x / texture_aspect)
                         } else {
+                            //Se la texture è piu alta rispetto allo spazio dispnibile,l altezza dell immagine è impostata all altezza massima,la larghezza viene scalata proporzionalmente per mantenere l aspect ratio
                             egui::vec2(available_size.y * texture_aspect, available_size.y)
                         };
-                        let available_rect = ui.available_rect_before_wrap();
+                        let available_rect = ui.available_rect_before_wrap();//Retteangolo di spazio disponibile(teenedo conto della presenza di altri bottoni (non ci sono))
                         image_rect = egui::Rect::from_center_size(
                             available_rect.center(),
                             size
-                        );
-                        let image = Image::from_texture(texture)
-                            .fit_to_exact_size(size)
+                        );// Rappresenta l area in cui l'immagine verrà renderizzata centrata nello spazio disponibile
+                        let image = Image::from_texture(texture) //crea un immagine da una texture
+                            .fit_to_exact_size(size)//impsota dimenzioni fisse all'immagine(l' aspect ratio è già stato calcolato in precedenza)
                             .tint(Color32::from_rgba_unmultiplied(110, 110, 110, 200));
                         ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), image_rect), |ui| {
-                            image.ui(ui);
-                        });
-
+                            image.ui(ui);//Renderizza l immagine all'interno dell area allocata
+                        });//Crea un area di dimensioni image_react per contenere l immagine
+                        //La posizione di inizio si ha a partire da quando clicchi il pulsante sinistro
                         if let Some(start) = self.start_pos {
-                            if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
+                            if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {//ottine la posizione corrente del mouse
                                 let clamped_current = Pos2::new(
-                                    current.x.clamp(image_rect.min.x, image_rect.max.x),
+                                    current.x.clamp(image_rect.min.x, image_rect.max.x),//clamp permette di mantenere il valore all'interno di un intervallo
                                     current.y.clamp(image_rect.min.y, image_rect.max.y)
                                 );
 
-                                let rect = Rect::from_two_pos(start, clamped_current);
-                                ui.painter().rect_stroke(rect, 0.0, (2.0, Color32::WHITE));
+                                let rect = Rect::from_two_pos(start, clamped_current); //crea un rettangolo a partire da dalla posizione inziale (start) e quella corrente clampata
+                                ui.painter().rect_stroke(rect, 0.0, (2.0, Color32::WHITE));//disegna il bordo del rettangolo
                                 ui.painter().rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 50));
                             }
                         }
                     }
-                    let screen_rect = ui.max_rect();
-                    let center_x = screen_rect.center().x;
+                    //Scritta seleziona area
+                    let screen_rect = ui.max_rect();//prende le dimensioni massime dello schermo
+                    let center_x = screen_rect.center().x; //calcola il centro dello schermo
                     let center_y = screen_rect.center().y;
                     let rect = Rect::from_center_size(
                         Pos2::new(center_x, center_y),
                         egui::vec2(200.0, 50.0)
-                    );
-
+                    );//crea un rettangolo di dimensioni 200x50 centrato nello schermo
+                    //alloca uno spazio specifico per il messaggio
                     ui.allocate_new_ui(UiBuilder::max_rect(Default::default(), rect), |ui| {
                         ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
                             ui.colored_label(Color32::WHITE, egui::RichText::new("Clicca e trascina per selezionare l'area").strong());
@@ -590,17 +609,19 @@ impl App for MyApp {
                     });
 
                     if self.screenshot.is_some() {
+                        //gestisce la logica di selezione dell'area
                         self.handle_selection(ctx, image_rect);
                     }
                 });
         } else if self.toolbar_visible==true && self.caster_running.load(Ordering::SeqCst) {
                 self.set_fullscreen_transparent(ctx);
-                egui::CentralPanel::default()
+                egui::CentralPanel::default() //crea un pannelo centrale che occupa tuttlo lo spazio disponibile, trasparente
                     .frame(egui::Frame::none()
                     .fill(Color32::from_rgba_unmultiplied(0, 0, 0, 0)))
                     .show(ctx, |ui| {
                         self.handle_annotations(ui);
                     });
+                //crea finestra della toolbar
                 egui::Window::new("")
                 .fixed_size(egui::Vec2::new(300.0, 45.0))
                 .collapsible(false)
@@ -613,7 +634,7 @@ impl App for MyApp {
                     .stroke(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60))))
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        self.show_annotation_toolbar(ui);
+                        self.show_annotation_toolbar(ui); //mostra i pulasnti di annotazione
                         ui.separator();
                         if ui.button("❌").clicked() {
                             self.toolbar_visible = false;
@@ -624,12 +645,12 @@ impl App for MyApp {
 
         } else {
             egui::CentralPanel::default().show(ctx, |ui| {
-                self.display_error(ui);
+                self.display_error(ui);//scrivi errore se presente
                 ui.heading("Screencast Application");
                 ui.horizontal(|ui| {
-                    let caster_button = ui.add_enabled(!self.receiver_running.load(Ordering::SeqCst), egui::Button::new("Caster"));
+                    let caster_button = ui.add_enabled(!self.receiver_running.load(Ordering::SeqCst), egui::Button::new("Caster"));//pulsante che viene disabilitatoro se si è in modalità reciver
                     if caster_button.clicked()  {
-                        self.clear_error();
+                        self.clear_error();//resetta l'errore
                         self.mode = Some(Modality::Caster);
                         self.stop_signal.store(false, Ordering::SeqCst);
                         self.selecting_area = false;
@@ -652,11 +673,11 @@ impl App for MyApp {
                             ui.horizontal(|ui| {
                                 ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 let text_edit = egui::TextEdit::singleline(&mut self.caster_address);
-                                ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), text_edit);
+                                ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), text_edit);//cotrollo se il casting è avviato non si può modificare l'imput text
                             });
                             ui.horizontal(|ui| {
                                 ui.label("Seleziona Monitor:");
-                                if !self.caster_running.load(Ordering::SeqCst) {
+                                if !self.caster_running.load(Ordering::SeqCst) {//se il cating è avviato non puo selzionare altri schermi
                                     egui::ComboBox::from_label("")
                                         .selected_text(match self.selected_display_index {
                                             Some(index) => &self.available_displays[index].name,
@@ -671,7 +692,7 @@ impl App for MyApp {
                                                 );
 
                                                 if response.clicked() {
-                                                    self.selected_area = None;
+                                                    self.selected_area = None;//resetta l'area selezionata quando cambi il dispaly
                                                 }
                                             }
                                         });
@@ -687,11 +708,11 @@ impl App for MyApp {
                                 }
 
                                 if ui.add_enabled(!self.caster_running.load(Ordering::SeqCst), egui::Button::new("🔄")).clicked() {
-                                    self.selected_area = None;
+                                    self.selected_area = None;//qunado clicchi su refresh dei display resetta l'area selezionata
                                     self.refresh_displays();
                                 }
                             });
-
+                            //Punto superiroe sinisto ed inferiroe destro dell area selezionata
                             if let Some(area) = self.selected_area {
                                 ui.label(format!(
                                     "Area selezionata: ({}, {}) - ({}, {})",
@@ -703,16 +724,17 @@ impl App for MyApp {
                             }
 
                             if !self.caster_running.load(Ordering::SeqCst) {
+                                //se il casting non è ancora partito
                                 self.status_message="Modalità selezionata: Caster".to_string();
 
                                 let select_area_button = ui.add_enabled(
                                     self.selected_display_index.is_some(),
                                     egui::Button::new("Seleziona area")
-                                );
+                                );//il pulsante di seleziona aerea è abilitato solo se è stato selezionato un display
 
                                 if select_area_button.clicked() {
-                                    self.capture_screenshot(ctx);
-                                    self.selecting_area = true;
+                                    self.capture_screenshot(ctx);//cattura lo screenshot dello schermo
+                                    self.selecting_area = true;//iposta selezione area
                                     self.start_pos = None;
                                     self.status_message = "Clicca e trascina per selezionare l'area".to_string();
                                 }
@@ -739,15 +761,15 @@ impl App for MyApp {
                                     let caster_address = self.caster_address.clone();
                                     let error_message = self.error_message.clone();
                                     let is_error = self.is_error.clone();
-                                    let is_running = self.caster_running.clone(); // Assicurati di usare caster_running
+                                    let is_running = self.caster_running.clone();
                                     let selected_display_index = self.selected_display_index.unwrap_or_else(|| 0);
                                     let paused_clone = self.paused.clone();
                                     let screen_blanked_clone = self.screen_blanked.clone();
                                     let terminate_clone = self.terminate.clone();
                                     let connected_to_caster = self.connected_to_caster.clone();
-
+                                    //cra thred per gestire il  casting(daco che è gestito il tutto tramite funzioni ascincrone e il therd semplice non posside un runtime asincro va rato al suo intermno per permettere l'uso di funzioni asincrone, la thred pool è quella di defaoult con stesso numero di core della cpu)
                                     std::thread::spawn(move || {
-                                        Runtime::new().unwrap().block_on(async {
+                                        Runtime::new().unwrap().block_on(async {// crea un runtime asincrono, e non termina il thread finche non è terminato il runtime
                                             if let Err(e) = caster::start_caster(&caster_address, stop_signal, selected_area, selected_display_index, paused_clone, screen_blanked_clone, terminate_clone).await {
                                                 let error = format!("Errore nel caster: {}", e);
                                                 *error_message.write().unwrap() = Some(error);
@@ -761,7 +783,7 @@ impl App for MyApp {
                                     });
                                 }
                             } else {
-
+                                //se la stream sta andando mostra la toolbar
                                 ui.horizontal(|ui| {
                                     if ui.button(if self.toolbar_visible {"Nascondi Toolbar"} else {"Mostra Toolbar"}).clicked() {
                                         self.toolbar_visible = !self.toolbar_visible;
@@ -780,7 +802,7 @@ impl App for MyApp {
 
                                     if ui.button("⏹ Stop").clicked() {
                                         self.status_message = "Interrompendo il caster...".to_string();
-                                        self.stop_signal.store(true, Ordering::SeqCst);
+                                        self.stop_signal.store(true, Ordering::SeqCst);//manda il segnale di interruzione
                                         self.caster_running.store(false, Ordering::SeqCst);
                                         self.status_message = "Caster interrotto.".to_string();
                                     }
@@ -810,17 +832,17 @@ impl App for MyApp {
                                 ui.label("Indirizzo caster: es.127.0.0.1:12345 in locale o tra più dispositivi 192.168.165.219:8080");
                                 let text_edit = egui::TextEdit::singleline(&mut self.caster_address);
                                 ui.add_enabled(!self.receiver_running.load(Ordering::SeqCst), text_edit);
-                            });
+                            });//se la ricezione è attvia non è possibile modificare l'indirizzo del caster
 
                             if !self.receiver_running.load(Ordering::SeqCst) {
                                 self.status_message="Modalità selezionata: Receiver".to_string();
                                 if ui.button("Avvia").clicked() {
                                     self.clear_error();
+                                    self.stream_texture = None;//todo Pulisci texture ultima immagine ricevuta
                                     let addr = self.caster_address.clone();
                                     let receiver_state = Arc::clone(&self.receiver_state);
                                     self.receiver_running.store(true, Ordering::SeqCst);
                                     self.stop_signal.store(false, Ordering::SeqCst);
-
                                     let stop_signal = self.stop_signal.clone();
                                     let ctx = ctx.clone();
                                     let error_message = self.error_message.clone();
@@ -829,7 +851,7 @@ impl App for MyApp {
                                     let shared_frame = self.shared_frame.clone();
                                     let connected_to_caster = self.connected_to_caster.clone();
 
-                                    std::thread::spawn(move || {
+                                    std::thread::spawn(move || {//stessa cosa del caster
                                         Runtime::new().unwrap().block_on(async {
                                             if let Err(e) = receiver::receive_frame(&addr, stop_signal, shared_frame,receiver_state, connected_to_caster).await {
                                                 let error = if e.to_string() == "Il caster ha chiuso la trasmissione." {
@@ -849,7 +871,7 @@ impl App for MyApp {
                             } else if self.connected_to_caster.load(Ordering::SeqCst){
                                 ui.horizontal(|ui| {
                                     if let Ok(mut receiver_state) = Arc::clone(&self.receiver_state).write() {
-
+                                        //Se la registrazione è attiva, mostra il pulsante per arrestarla
                                         if receiver_state.recording {
                                             if ui.add(egui::Button::new("⏹ Arresta Registrazione")
                                                 .fill(Color32::from_rgb(255, 50, 50)))
@@ -872,7 +894,7 @@ impl App for MyApp {
                                                 if ui.add(egui::Button::new("⏺ Avvia Registrazione")
                                                     .fill(Color32::from_rgb(50, 255, 50)))
                                                     .clicked()
-                                                {
+                                                {   //Verifica la presneza di ffmpeg prima di avviare la registrazione
                                                     match std::process::Command::new("ffmpeg").arg("-version").output() {
                                                         Ok(_) => {
                                                             match receiver_state.start_recording() {
@@ -910,7 +932,7 @@ impl App for MyApp {
                                         let color_image = egui::ColorImage::from_rgba_unmultiplied(
                                             [shared.width, shared.height],
                                             &shared.buffer,
-                                        );
+                                        );// carica l immagine come  Texure in egui(egui è in grado di gestire solo questo tipo di interfacce)
 
                                         self.stream_texture = Some(ctx.load_texture(
                                             "stream",
@@ -933,6 +955,7 @@ impl App for MyApp {
                                 }
 
                                 if let Some(texture) = &self.stream_texture {
+                                    //Come fatto con lo screen di selezion area l'immagine viene ridimensionata per fittare nello spazio ancora disponibile della ui
                                     let available_size = ui.available_size();
                                     let texture_size = texture.size_vec2();
                                     let texture_aspect = texture_size.x / texture_size.y;
