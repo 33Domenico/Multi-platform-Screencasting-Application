@@ -285,7 +285,7 @@ pub async fn receive_frame(
                 eprintln!("Errore durante la lettura della dimensione del frame: {}", e);
 
                 // Chiudi la connessione solo se è un errore irreversibile
-                if e.kind() == io::ErrorKind::UnexpectedEof {
+                if e.kind() == io::ErrorKind::UnexpectedEof || e.raw_os_error() == Some(10054) {
                     if let Ok(mut receiver_state) = receiver_state.write() {
                         if receiver_state.recording {
                             let _ = receiver_state.stop_recording();
