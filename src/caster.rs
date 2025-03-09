@@ -93,15 +93,23 @@ async fn capture_screen(
                     let start_y = area.min.y as usize;
                     let end_x = area.max.x as usize;
                     let end_y = area.max.y as usize;
+                    let stride = frame.len() / height;
                     let mut cropped_frame = Vec::new();
                     for y in start_y..end_y {
-                        let start_index = y * width * 4 + start_x * 4;
-                        let end_index = y * width * 4 + end_x * 4;
+                        let start_index = y * stride + start_x * 4;
+                        let end_index = y * stride + end_x * 4;
                         cropped_frame.extend_from_slice(&frame[start_index..end_index]);
                     }
                     (cropped_frame, end_x - start_x, end_y - start_y)
                 } else {
-                    (frame.to_vec(), width, height)
+                    let stride = frame.len() / height;
+                    let mut full_frame = Vec::new();
+                    for y in 0..height {
+                        let start = y * stride;
+                        let end = start + width * 4;
+                        full_frame.extend_from_slice(&frame[start..end]);
+                    }
+                    (full_frame, width, height)
                 };
                 let jpeg_frame = if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
                     let blank_frame = vec![0; cropped_width * cropped_height * 4];

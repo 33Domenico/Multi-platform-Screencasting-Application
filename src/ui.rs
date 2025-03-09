@@ -332,16 +332,22 @@ impl MyApp {
                 }
             }
         };
+        let stride = frame.len() / height;
 
         let mut img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(
            width as u32,
            height as u32
         );
 
-        for (i, pixel) in img_buffer.pixels_mut().enumerate() {
-            let idx = i * 4;
-            if idx + 3 < frame.len() {
-                *pixel = Rgba([frame[idx + 2], frame[idx + 1], frame[idx], 255]);
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * stride + x * 4;
+                if idx + 3 < frame.len() {
+                    let b = frame[idx];
+                    let g = frame[idx + 1];
+                    let r = frame[idx + 2];
+                    img_buffer.put_pixel(x as u32, y as u32, Rgba([r, g, b, 255]));
+                }
             }
         }
 
