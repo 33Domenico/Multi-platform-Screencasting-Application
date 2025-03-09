@@ -345,15 +345,19 @@ impl MyApp {
             }
         };//tenta piu volte fino a quando non cattura lo screen, se il frame non è pronto dorme per 200ms e riprova
 
-        let mut img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(
-           width as u32,
-           height as u32
-        ); //crea un buffer per l'immagine
+        let stride = frame.len() / height;
 
-        for (i, pixel) in img_buffer.pixels_mut().enumerate() {
-            let idx = i * 4;
-            if idx + 3 < frame.len() {
-                *pixel = Rgba([frame[idx + 2], frame[idx + 1], frame[idx], 255]);
+        let mut img_buffer = ImageBuffer::new(width as u32, height as u32);
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * stride + x * 4; // Usa lo stride invece di width*4
+                if idx + 3 < frame.len() {
+                    let b = frame[idx];
+                    let g = frame[idx + 1];
+                    let r = frame[idx + 2];
+                    img_buffer.put_pixel(x as u32, y as u32, Rgba([r, g, b, 255]));
+                }
             }
         } //converte immagine da formato bgr a formato rgb, inotr il canale alpha è imposato su opaco
 

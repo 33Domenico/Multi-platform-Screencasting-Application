@@ -95,19 +95,27 @@ async fn capture_screen(
                     let start_y = area.min.y as usize;
                     let end_x = area.max.x as usize; //spigolo destro
                     let end_y = area.max.y as usize;
+                    let stride = frame.len() / height;
                     //buffere riempito solo dei dati della regione selezionata
                     let mut cropped_frame = Vec::new();
                     //l immagine è salvata in formato rgba quidi 4 byte per pixel,quindi start indiex è y * width * 4 + start_x * 4
                     // vai a selziozionare i byte di ogni riga, dell area selzionata, per esempio area selezionata (100,100)a (300,300), nella prima iterazione selzioni i byte da y=100,per tutta la x=300(partendo da indice di inizo e fine), nella seconda iterazione selezioni i byte da y=101,per tutta la x=300(partendo da indice di inizo e fine) e cosi via
                     for y in start_y..end_y {
-                        let start_index = y * width * 4 + start_x * 4;// y è la riga, dato che la riga ha un numero di valori pari alla larghezza per 4, io parto dall indice con quel valore di y (quellla riga) a cui aggiungo la x(colanna di quella riga)
-                        let end_index = y * width * 4 + end_x * 4;
+                        let start_index = y * stride + start_x * 4;// y è la riga, dato che la riga ha un numero di valori pari alla larghezza per 4, io parto dall indice con quel valore di y (quellla riga) a cui aggiungo la x(colanna di quella riga)
+                        let end_index = y * stride + end_x * 4;
                         cropped_frame.extend_from_slice(&frame[start_index..end_index]); //estraggo i byte relativi alla regione selezionata
                     }
                     (cropped_frame, end_x - start_x, end_y - start_y)
                 } else {
                     // se non sta area selezionata, ritorna il frame intero
-                    (frame.to_vec(), width, height)
+                    let stride = frame.len() / height;
+                    let mut full_frame = Vec::new();
+                    for y in 0..height {
+                        let start = y * stride;
+                        let end = start + width * 4;
+                        full_frame.extend_from_slice(&frame[start..end]);
+                    }
+                    (full_frame, width, height)
                 };
                 let jpeg_frame = if hotkey_state.screen_blanked.load(Ordering::SeqCst) {
                     let blank_frame = vec![0; cropped_width * cropped_height * 4];//crea un immagine nera ponendo i byte tutti a zero
