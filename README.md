@@ -53,3 +53,6 @@ Run the following commands based on your operating system:
 ## Configuration
 The application supports configuration via a settings file `config.toml`
 
+## Possible improvements
+- Improve recording so that it is not necessary to save all frames before converting them to video
+- Use `tokio::spawn` instead of `std::thread::spawn` when creating threads for managing the caster and receiver

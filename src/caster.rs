@@ -167,7 +167,7 @@ pub async fn start_caster(addr: &str, stop_signal: Arc<AtomicBool>, selected_are
     });
 
     let hotkey_state_clone = Arc::clone(&hotkey_state);
-    std::thread::spawn(move || {
+    tokio::spawn(async move {
         handle_hotkeys(hotkey_state_clone);
     });
 

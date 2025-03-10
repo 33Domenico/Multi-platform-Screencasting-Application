@@ -539,7 +539,6 @@ impl App for MyApp {
 
         if self.selecting_area {
             egui::CentralPanel::default()
-                .frame(egui::Frame::none().fill(Color32::TRANSPARENT))
                 .show(ctx, |ui| {
                     let mut image_rect = egui::Rect::NOTHING;
 
@@ -749,6 +748,7 @@ impl App for MyApp {
                                     let screen_blanked_clone = self.screen_blanked.clone();
                                     let terminate_clone = self.terminate.clone();
                                     let connected_to_caster = self.connected_to_caster.clone();
+
 
                                     std::thread::spawn(move || {
                                         Runtime::new().unwrap().block_on(async {
